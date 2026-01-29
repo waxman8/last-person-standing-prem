@@ -222,12 +222,23 @@ async def get_gw_fixtures(gw_id: int, admin: User = Depends(get_admin_user), ses
 
 # --- Player Routes ---
 
-@app.get("/fixtures", response_model=List[Fixture])
+@app.get("/fixtures")
 async def get_current_fixtures(session: Session = Depends(get_session)):
     current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
     if not current_gw:
         return []
-    return session.exec(select(Fixture).where(Fixture.gameweek_id == current_gw.id)).all()
+    fixtures = session.exec(select(Fixture).where(Fixture.gameweek_id == current_gw.id)).all()
+    return [{
+        "id": f.id,
+        "home_team": f.home_team,
+        "away_team": f.away_team,
+        "kickoff_time": f.kickoff_time,
+        "status": f.status,
+        "gameweek": {
+            "id": current_gw.id,
+            "deadline": current_gw.deadline
+        }
+    } for f in fixtures]
 
 @app.post("/picks")
 async def make_pick(team_name: str, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
@@ -247,6 +258,17 @@ async def make_pick(team_name: str, current_user: User = Depends(get_current_use
         raise HTTPException(status_code=400, detail="Team already used")
     
     # Upsert pick
+    # Check if team is in current fixtures
+    fixtures = session.exec(select(Fixture).where(Fixture.gameweek_id == current_gw.id)).all()
+    valid_teams = set()
+    for f in fixtures:
+        valid_teams.add(f.home_team)
+        valid_teams.add(f.away_team)
+    
+    if team_name not in valid_teams:
+        raise HTTPException(status_code=400, detail="Invalid team selection")
+
+    # Upsert pick
     existing_pick = session.exec(select(Pick).where(and_(Pick.user_id == current_user.id, Pick.gameweek_id == current_gw.id))).first()
     if existing_pick:
         existing_pick.team_name = team_name
@@ -259,18 +281,19 @@ async def make_pick(team_name: str, current_user: User = Depends(get_current_use
     return {"message": "Pick saved"}
 
 @app.get("/standings")
-async def get_standings(session: Session = Depends(get_session)):
+async def get_standings(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     users = session.exec(select(User).where(User.is_admin == False)).all()
     current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
     
     results = []
     for u in users:
         pick = None
-        if current_gw and datetime.utcnow() > current_gw.deadline:
-            # Show pick if deadline passed
+        if current_gw:
             pick_obj = session.exec(select(Pick).where(and_(Pick.user_id == u.id, Pick.gameweek_id == current_gw.id))).first()
             if pick_obj:
-                pick = pick_obj.team_name
+                # Always show own pick, show others only if deadline passed
+                if u.id == current_user.id or datetime.utcnow() > current_gw.deadline:
+                    pick = pick_obj.team_name
         
         results.append({
             "name": u.name,
