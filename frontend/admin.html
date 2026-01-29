@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Last Person Standing - Prem - Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app" class="container mx-auto px-4 py-8 max-w-6xl">
+        <h1 class="text-3xl font-bold text-center mb-8 text-blue-900">🛠️ Last Person Standing - Prem</h1>
+
+        <!-- Login -->
+        <div v-if="!token" class="bg-white p-8 rounded-lg shadow-md max-w-md mx-auto">
+            <h2 class="text-xl font-semibold mb-4 text-center">Admin Login</h2>
+            <input v-model="pin" type="password" class="w-full border p-3 rounded mb-4 text-center" placeholder="Admin PIN" @keyup.enter="login">
+            <button @click="login" class="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 transition">Login</button>
+            <p v-if="error" class="text-red-500 mt-4 text-center">{{ error }}</p>
+            
+            <div class="mt-8 pt-6 border-t text-center">
+                <a href="/index.html" class="text-blue-600 hover:text-blue-800 font-medium">← Back to Player Portal</a>
+            </div>
+        </div>
+
+        <!-- Admin Panels -->
+        <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- User Management -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-bold mb-4 flex items-center">
+                    <span class="mr-2">👥</span> Players
+                </h2>
+                <div class="space-y-4 mb-6 max-h-96 overflow-y-auto">
+                    <div v-for="u in users" :key="u.id" class="flex justify-between items-center border-b pb-2">
+                        <div>
+                            <span class="font-medium">{{ u.name }}</span>
+                            <span class="ml-2 text-xs bg-gray-200 px-2 rounded">{{ u.pin }}</span>
+                        </div>
+                        <span :class="u.is_active ? 'text-green-600' : 'text-red-600'" class="text-sm font-bold">
+                            {{ u.is_active ? 'Active' : 'Out' }}
+                        </span>
+                    </div>
+                </div>
+                <div class="bg-blue-50 p-4 rounded">
+                    <h3 class="font-bold mb-2 text-sm">Add New Player</h3>
+                    <input v-model="newUser.name" placeholder="Name" class="w-full border p-2 rounded mb-2 text-sm">
+                    <input v-model="newUser.pin" placeholder="5-digit PIN" class="w-full border p-2 rounded mb-2 text-sm">
+                    <button @click="addUser" class="w-full bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700 text-sm">Add Player</button>
+                </div>
+            </div>
+
+            <!-- Game Control -->
+            <div class="bg-white p-6 rounded-lg shadow-md lg:col-span-2">
+                <h2 class="text-xl font-bold mb-4 flex items-center">
+                    <span class="mr-2">🎮</span> Game Control & Fixtures
+                </h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div class="p-4 border rounded bg-white shadow-sm">
+                        <h3 class="font-bold mb-1 text-blue-800">1. Sync Data</h3>
+                        <p class="text-xs text-gray-500 mb-3">Pull latest fixture dates and status from API.</p>
+                        <button @click="syncFixtures" :disabled="syncing" class="w-full bg-blue-500 text-white py-2 rounded font-bold hover:bg-blue-600 disabled:opacity-50 text-sm">
+                            {{ syncing ? 'Syncing...' : 'Sync Fixtures' }}
+                        </button>
+                    </div>
+                    <div class="p-4 border rounded bg-yellow-50 shadow-sm flex flex-col justify-between">
+                        <div>
+                            <h3 class="font-bold mb-1 text-yellow-800 uppercase text-xs tracking-wider">Active Gameweek</h3>
+                            <div v-if="currentGW" class="text-sm">
+                                <p class="text-lg font-bold text-yellow-900">GW {{ currentGW.id }}</p>
+                                <p class="text-xs text-yellow-700">Deadline: {{ formatDate(currentGW.deadline) }}</p>
+                            </div>
+                            <div v-else class="text-sm text-red-600 font-medium py-2">
+                                ⚠️ No current gameweek set.<br>
+                                <span class="text-xs text-gray-500 font-normal">Sync fixtures to activate the next week.</span>
+                            </div>
+                        </div>
+                        <button v-if="currentGW && selectedGWId !== currentGW.id" @click="selectedGWId = currentGW.id"
+                                class="mt-2 text-xs bg-yellow-200 text-yellow-800 py-1 px-2 rounded hover:bg-yellow-300 font-bold transition">
+                            Jump to Active Week
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Gameweek Fixtures Viewer -->
+                <div class="border rounded-lg overflow-hidden">
+                    <div class="bg-gray-100 p-3 flex justify-between items-center">
+                        <div class="flex items-center space-x-2">
+                            <button @click="changeGW(-1)" class="px-2 py-1 bg-white border rounded hover:bg-gray-50 text-sm"><</button>
+                            <select v-model="selectedGWId" class="font-bold text-sm border-none bg-transparent focus:ring-0 cursor-pointer">
+                                <option v-for="gw in gameweeks" :key="gw.id" :value="gw.id">
+                                    Gameweek {{ gw.id }} {{ gw.is_current ? ' (Active)' : '' }}
+                                </option>
+                            </select>
+                            <span v-if="selectedGW && selectedGW.is_current" class="bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider animate-pulse">Active</span>
+                            <button @click="changeGW(1)" class="px-2 py-1 bg-white border rounded hover:bg-gray-50 text-sm">></button>
+                        </div>
+                        <div v-if="selectedGW" class="flex items-center space-x-4">
+                            <span v-if="selectedGW.is_processed" class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">PROCESSED</span>
+                            <span v-else class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-bold">OPEN</span>
+                            
+                            <button v-if="!selectedGW.is_processed" @click="applyResults(selectedGW.id)" :disabled="processing" 
+                                    class="bg-green-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-green-700 disabled:opacity-50">
+                                Apply Results
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="p-4 max-h-[500px] overflow-y-auto bg-white">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b text-left text-gray-600">
+                                    <th class="pb-2 font-semibold">Match</th>
+                                    <th class="pb-2 font-semibold">Status</th>
+                                    <th class="pb-2 font-semibold text-center">Score</th>
+                                    <th class="pb-2 font-semibold">Winner</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y">
+                                <tr v-for="f in fixtures" :key="f.id" class="hover:bg-gray-50">
+                                    <td class="py-3">
+                                        <div class="font-medium">{{ f.home_team }} v {{ f.away_team }}</div>
+                                        <div class="text-[10px] text-gray-400">{{ formatDate(f.kickoff_time) }}</div>
+                                    </td>
+                                    <td class="py-3">
+                                        <span :class="getStatusClass(f.status)" class="text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                            {{ f.status }}
+                                        </span>
+                                    </td>
+                                    <td class="py-3 text-center font-mono">
+                                        {{ f.home_score !== null ? f.home_score : '-' }} : {{ f.away_score !== null ? f.away_score : '-' }}
+                                    </td>
+                                    <td class="py-3 font-semibold text-blue-700">
+                                        {{ f.winner || '-' }}
+                                    </td>
+                                </tr>
+                                <tr v-if="fixtures.length === 0">
+                                    <td colspan="4" class="py-8 text-center text-gray-400 italic">No fixtures found for this gameweek.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <button @click="logout" class="lg:col-span-3 text-gray-500 hover:underline text-center mt-4">Logout</button>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+        createApp({
+            data() {
+                return {
+                    pin: '',
+                    token: localStorage.getItem('token_admin'),
+                    users: [],
+                    newUser: { name: '', pin: '' },
+                    syncing: false,
+                    processing: false,
+                    error: '',
+                    gameweeks: [],
+                    selectedGWId: null,
+                    fixtures: [],
+                    currentGW: null
+                }
+            },
+            async mounted() {
+                if (this.token) {
+                    await this.init();
+                }
+            },
+            watch: {
+                selectedGWId(newId) {
+                    if (newId) this.loadFixtures(newId);
+                }
+            },
+            computed: {
+                selectedGW() {
+                    return this.gameweeks.find(g => g.id === this.selectedGWId);
+                }
+            },
+            methods: {
+                async init() {
+                    await Promise.all([
+                        this.loadUsers(),
+                        this.loadGameweeks()
+                    ]);
+                    if (this.gameweeks.length > 0) {
+                        this.currentGW = this.gameweeks.find(g => g.is_current);
+                        if (!this.selectedGWId) {
+                            this.selectedGWId = this.currentGW ? this.currentGW.id : this.gameweeks[0].id;
+                        }
+                    }
+                },
+                async login() {
+                    try {
+                        const formData = new FormData();
+                        formData.append('username', 'admin');
+                        formData.append('password', this.pin);
+                        const res = await fetch('/login', { method: 'POST', body: formData });
+                        const data = await res.json();
+                        if (res.ok) {
+                            this.token = data.access_token;
+                            localStorage.setItem('token_admin', this.token);
+                            await this.init();
+                        } else {
+                            this.error = data.detail;
+                        }
+                    } catch (e) { this.error = "Login failed"; }
+                },
+                logout() {
+                    this.token = null;
+                    localStorage.removeItem('token_admin');
+                },
+                async loadUsers() {
+                    const res = await fetch('/admin/users', { headers: { 'Authorization': `Bearer ${this.token}` } });
+                    if (res.status === 403) this.logout();
+                    this.users = await res.json();
+                },
+                async loadGameweeks() {
+                    const res = await fetch('/admin/gameweeks', { headers: { 'Authorization': `Bearer ${this.token}` } });
+                    if (res.ok) {
+                        this.gameweeks = await res.json();
+                    }
+                },
+                async loadFixtures(gwId) {
+                    const res = await fetch(`/admin/fixtures/${gwId}`, { headers: { 'Authorization': `Bearer ${this.token}` } });
+                    if (res.ok) {
+                        this.fixtures = await res.json();
+                    }
+                },
+                async addUser() {
+                    const res = await fetch('/admin/users', {
+                        method: 'POST',
+                        headers: { 
+                            'Authorization': `Bearer ${this.token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ ...this.newUser, is_active: true, is_admin: false })
+                    });
+                    if (res.ok) {
+                        this.newUser = { name: '', pin: '' };
+                        await this.loadUsers();
+                    }
+                },
+                async syncFixtures() {
+                    this.syncing = true;
+                    try {
+                        const res = await fetch('/admin/sync-fixtures', { 
+                            method: 'POST', 
+                            headers: { 'Authorization': `Bearer ${this.token}` } 
+                        });
+                        if (res.ok) {
+                            await this.init();
+                            alert("Fixtures synced successfully!");
+                        } else {
+                            const data = await res.json();
+                            alert("Sync failed: " + data.detail);
+                        }
+                    } finally {
+                        this.syncing = false;
+                    }
+                },
+                async applyResults(gwId) {
+                    if (!confirm(`Are you sure you want to apply results for Gameweek ${gwId}? This will eliminate players.`)) return;
+                    this.processing = true;
+                    try {
+                        const res = await fetch(`/admin/apply-results/${gwId}`, { 
+                            method: 'POST', 
+                            headers: { 'Authorization': `Bearer ${this.token}` } 
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                            alert(data.message);
+                            await this.init();
+                        } else {
+                            alert("Error: " + data.detail);
+                        }
+                    } finally {
+                        this.processing = false;
+                    }
+                },
+                changeGW(delta) {
+                    const idx = this.gameweeks.findIndex(g => g.id === this.selectedGWId);
+                    if (idx + delta >= 0 && idx + delta < this.gameweeks.length) {
+                        this.selectedGWId = this.gameweeks[idx + delta].id;
+                    }
+                },
+                formatDate(dateStr) {
+                    if (!dateStr) return '-';
+                    const d = new Date(dateStr);
+                    return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+                },
+                getStatusClass(status) {
+                    switch (status) {
+                        case 'FINISHED': return 'bg-gray-200 text-gray-700';
+                        case 'IN_PLAY': return 'bg-green-500 text-white';
+                        case 'TIMED': 
+                        case 'SCHEDULED': return 'bg-blue-100 text-blue-700';
+                        case 'POSTPONED': return 'bg-yellow-200 text-yellow-800';
+                        default: return 'bg-gray-100 text-gray-600';
+                    }
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

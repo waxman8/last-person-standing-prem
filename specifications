@@ -1,0 +1,50 @@
+
+a Fun application to manage our group's friendly "last man standing" football betting game.
+
+Tech stack:
+Python with FastAPI, light weight SQL (can be to a local file in a volume)
+Single application : run in docker
+
+
+Admin UI
+Create users
+Update fixtures and results 
+Be able to use some API to pull in fixtures and not manually capture
+
+Player UI
+Log in with a pin (5 digit number randomly assigned)
+Display if player is still active
+See the coming weeks matches
+Select your team for the coming week  (only from teams player has not used before)
+See the list of player names still "in the game" 
+See the list of players eliminated
+
+General
+Modern and very intuitive user interface that players would want to use
+Calculate as much as possible and need very little manual "admin" intervention 
+
+<game_description>
+Last Man Standing – Simple Rules
+£5 entry per person
+Winner takes all (no charity, no splits unless stated below)
+
+How it works
+Each gameweek, pick ONE Premier League team to WIN
+If your team wins → you’re through to the next round
+If your team draws or loses → you’re out
+
+Team usage
+You cannot pick the same team twice during the competition
+
+Deadlines
+Picks must be in before the first kick-off of the gameweek
+No pick = you’re out
+
+Postponed matches
+If your chosen match is postponed, you’re automatically through
+That team cannot be picked again later
+
+Winning
+The last remaining player wins the pot
+If everyone goes out in the same week, the pot is shared between those players
+</game_description>

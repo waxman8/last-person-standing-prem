@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Last Person Standing - Prem - Player</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app" class="container mx-auto px-4 py-8 max-w-2xl">
+        <h1 class="text-3xl font-bold text-center mb-8 text-blue-900">⚽ Last Person Standing - Prem</h1>
+
+        <!-- Login -->
+        <div v-if="!token" class="bg-white p-8 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-4">Enter your 5-digit PIN</h2>
+            <input v-model="pin" type="password" maxlength="5" class="w-full border p-3 rounded mb-4 text-center text-2xl tracking-widest" placeholder="12345">
+            <button @click="login" class="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 transition">Login</button>
+            <p v-if="error" class="text-red-500 mt-4 text-center">{{ error }}</p>
+
+            <div class="mt-8 pt-6 border-t text-center">
+                <a href="/index.html" class="text-blue-600 hover:text-blue-800 font-medium">← Back to Home</a>
+            </div>
+        </div>
+
+        <!-- Dashboard -->
+        <div v-else>
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <p class="text-gray-600">Welcome,</p>
+                    <h2 class="text-2xl font-bold">{{ user.name }}</h2>
+                </div>
+                <div :class="user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" class="px-4 py-2 rounded-full font-bold">
+                    {{ user.is_active ? 'ACTIVE' : 'ELIMINATED' }}
+                </div>
+            </div>
+
+            <!-- Make a Pick -->
+            <div v-if="user.is_active" class="bg-white p-6 rounded-lg shadow-md mb-8">
+                <h3 class="text-xl font-bold mb-4">Make Your Pick</h3>
+                <div v-if="fixtures.length > 0">
+                    <p class="text-sm text-gray-500 mb-4">Select one team to win this week. Deadline: {{ formatDate(fixtures[0].gameweek.deadline) }}</p>
+                    <select v-model="selectedTeam" class="w-full border p-3 rounded mb-4">
+                        <option value="">-- Choose a Team --</option>
+                        <template v-for="f in fixtures">
+                            <option :value="f.home_team">{{ f.home_team }} (vs {{ f.away_team }})</option>
+                            <option :value="f.away_team">{{ f.away_team }} (vs {{ f.home_team }})</option>
+                        </template>
+                    </select>
+                    <button @click="submitPick" class="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700 transition">Confirm Pick</button>
+                </div>
+                <div v-else class="text-center text-gray-500 py-4">No active gameweek or fixtures available.</div>
+                <p v-if="pickMsg" class="mt-4 text-center font-bold" :class="pickMsg.includes('Success') ? 'text-green-600' : 'text-red-600'">{{ pickMsg }}</p>
+            </div>
+
+            <!-- Standings -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-xl font-bold mb-4">Game Standings</h3>
+                <div class="space-y-3">
+                    <div v-for="player in standings" class="flex justify-between border-b pb-2">
+                        <span :class="{'line-through text-gray-400': !player.is_active}">{{ player.name }}</span>
+                        <span class="font-medium">
+                            <span v-if="player.current_pick" class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{{ player.current_pick }}</span>
+                            <span v-else-if="!player.is_active" class="text-red-500 text-sm italic">Out</span>
+                            <span v-else class="text-gray-400 text-sm italic">???</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <button @click="logout" class="mt-8 text-gray-500 hover:underline w-full text-center">Logout</button>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+        createApp({
+            data() {
+                return {
+                    pin: '',
+                    token: localStorage.getItem('token'),
+                    user: {},
+                    fixtures: [],
+                    standings: [],
+                    selectedTeam: '',
+                    error: '',
+                    pickMsg: ''
+                }
+            },
+            async mounted() {
+                if (this.token) {
+                    await this.loadData();
+                }
+            },
+            methods: {
+                async login() {
+                    try {
+                        const formData = new FormData();
+                        formData.append('username', 'user');
+                        formData.append('password', this.pin);
+                        const res = await fetch('/login', { method: 'POST', body: formData });
+                        const data = await res.json();
+                        if (res.ok) {
+                            this.token = data.access_token;
+                            localStorage.setItem('token', this.token);
+                            await this.loadData();
+                        } else {
+                            this.error = data.detail;
+                        }
+                    } catch (e) {
+                        this.error = "Login failed";
+                    }
+                },
+                logout() {
+                    this.token = null;
+                    localStorage.removeItem('token');
+                },
+                async loadData() {
+                    const headers = { 'Authorization': `Bearer ${this.token}` };
+                    const userRes = await fetch('/me', { headers });
+                    this.user = await userRes.json();
+                    
+                    const fixRes = await fetch('/fixtures', { headers });
+                    this.fixtures = await fixRes.json();
+
+                    const standRes = await fetch('/standings', { headers });
+                    this.standings = await standRes.json();
+                },
+                async submitPick() {
+                    if (!this.selectedTeam) return;
+                    const headers = { 'Authorization': `Bearer ${this.token}` };
+                    const res = await fetch(`/picks?team_name=${encodeURIComponent(this.selectedTeam)}`, { 
+                        method: 'POST', 
+                        headers 
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        this.pickMsg = "Success! Pick saved.";
+                        await this.loadData();
+                    } else {
+                        this.pickMsg = "Error: " + data.detail;
+                    }
+                },
+                formatDate(dateStr) {
+                    return new Date(dateStr).toLocaleString();
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
