@@ -208,9 +208,17 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
     
     gw.is_processed = True
     session.add(gw)
+
+    # Roll over: Set next gameweek as current if it exists
+    next_gw = session.get(Gameweek, gw_id + 1)
+    if next_gw:
+        gw.is_current = False
+        next_gw.is_current = True
+        session.add(next_gw)
+
     session.commit()
     
-    return {"message": f"Gameweek {gw_id} processed successfully"}
+    return {"message": f"Gameweek {gw_id} processed successfully. Rolled over to GW {gw_id + 1 if next_gw else gw_id}."}
 
 @app.get("/admin/gameweeks")
 async def get_gameweeks(admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
@@ -218,7 +226,7 @@ async def get_gameweeks(admin: User = Depends(get_admin_user), session: Session 
 
 @app.get("/admin/fixtures/{gw_id}")
 async def get_gw_fixtures(gw_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
-    return session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id)).all()
+    return session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id).order_by(Fixture.kickoff_time)).all()
 
 # --- Player Routes ---
 
@@ -227,7 +235,7 @@ async def get_current_fixtures(session: Session = Depends(get_session)):
     current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
     if not current_gw:
         return []
-    fixtures = session.exec(select(Fixture).where(Fixture.gameweek_id == current_gw.id)).all()
+    fixtures = session.exec(select(Fixture).where(Fixture.gameweek_id == current_gw.id).order_by(Fixture.kickoff_time)).all()
     return [{
         "id": f.id,
         "home_team": f.home_team,
@@ -301,6 +309,42 @@ async def get_standings(current_user: User = Depends(get_current_user), session:
             "current_pick": pick
         })
     return results
+
+@app.get("/history")
+async def get_user_history(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    # Get all picks for the user, ordered by gameweek
+    picks = session.exec(select(Pick).where(Pick.user_id == current_user.id).order_by(Pick.gameweek_id)).all()
+    
+    history = []
+    for pick in picks:
+        gw = session.get(Gameweek, pick.gameweek_id)
+        if not gw: continue
+
+        # Find the fixture for this team in this gameweek
+        fixture = session.exec(select(Fixture).where(
+            and_(
+                Fixture.gameweek_id == pick.gameweek_id,
+                (Fixture.home_team == pick.team_name) | (Fixture.away_team == pick.team_name)
+            )
+        )).first()
+        
+        outcome = "Pending"
+        if fixture:
+            if fixture.status == 'FINISHED':
+                outcome = "WON" if fixture.winner == pick.team_name else "LOST"
+            elif fixture.status in ['POSTPONED', 'CANCELLED']:
+                outcome = "THROUGH (Postponed)" if gw.is_processed else "POSTPONED"
+            elif fixture.status == 'IN_PLAY':
+                outcome = "In Play"
+        
+        history.append({
+            "gameweek_id": pick.gameweek_id,
+            "team_name": pick.team_name,
+            "outcome": outcome,
+            "is_processed": gw.is_processed
+        })
+    
+    return history
 
 # Serve static files (Frontend)
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

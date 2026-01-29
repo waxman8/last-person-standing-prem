@@ -53,6 +53,37 @@
                 <p v-if="pickMsg" class="mt-4 text-center font-bold" :class="pickMsg.includes('Success') ? 'text-green-600' : 'text-red-600'">{{ pickMsg }}</p>
             </div>
 
+            <!-- History -->
+            <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+                <h3 class="text-xl font-bold mb-4">My History</h3>
+                <div v-if="history.length > 0" class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="border-b">
+                                <th class="pb-2">GW</th>
+                                <th class="pb-2">Team</th>
+                                <th class="pb-2 text-right">Outcome</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="entry in history" :key="entry.gameweek_id" class="border-b last:border-0">
+                                <td class="py-2">{{ entry.gameweek_id }}</td>
+                                <td class="py-2">{{ entry.team_name }}</td>
+                                <td class="py-2 text-right">
+                                    <span :class="{
+                                        'text-green-600 font-bold': entry.outcome === 'WON' || entry.outcome.includes('THROUGH'),
+                                        'text-red-600 font-bold': entry.outcome === 'LOST',
+                                        'text-blue-600 italic': entry.outcome === 'Pending' || entry.outcome === 'In Play',
+                                        'text-gray-500 italic': entry.outcome === 'POSTPONED'
+                                    }">{{ entry.outcome }}</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div v-else class="text-center text-gray-500 py-4">No history yet.</div>
+            </div>
+
             <!-- Standings -->
             <div class="bg-white p-6 rounded-lg shadow-md">
                 <h3 class="text-xl font-bold mb-4">Game Standings</h3>
@@ -82,6 +113,7 @@
                     user: {},
                     fixtures: [],
                     standings: [],
+                    history: [],
                     selectedTeam: '',
                     error: '',
                     pickMsg: ''
@@ -125,6 +157,9 @@
 
                     const standRes = await fetch('/standings', { headers });
                     this.standings = await standRes.json();
+
+                    const histRes = await fetch('/history', { headers });
+                    this.history = await histRes.json();
                 },
                 async submitPick() {
                     if (!this.selectedTeam) return;

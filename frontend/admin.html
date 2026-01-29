@@ -108,30 +108,30 @@
                     </div>
                     
                     <div class="p-4 max-h-[500px] overflow-y-auto bg-white">
-                        <table class="w-full text-sm">
+                        <table class="w-full text-sm table-fixed">
                             <thead>
                                 <tr class="border-b text-left text-gray-600">
-                                    <th class="pb-2 font-semibold">Match</th>
-                                    <th class="pb-2 font-semibold">Status</th>
-                                    <th class="pb-2 font-semibold text-center">Score</th>
-                                    <th class="pb-2 font-semibold">Winner</th>
+                                    <th class="pb-2 font-semibold w-5/12">Match</th>
+                                    <th class="pb-2 font-semibold w-2/12">Status</th>
+                                    <th class="pb-2 font-semibold w-2/12 text-center">Score</th>
+                                    <th class="pb-2 font-semibold w-3/12">Winner</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y">
                                 <tr v-for="f in fixtures" :key="f.id" class="hover:bg-gray-50">
-                                    <td class="py-3">
-                                        <div class="font-medium">{{ f.home_team }} v {{ f.away_team }}</div>
-                                        <div class="text-[10px] text-gray-400">{{ formatDate(f.kickoff_time) }}</div>
+                                    <td class="py-3 pr-2">
+                                        <div class="font-medium truncate" :title="f.home_team + ' v ' + f.away_team">{{ f.home_team }} v {{ f.away_team }}</div>
+                                        <div class="text-[10px] text-gray-400 whitespace-nowrap">{{ formatDate(f.kickoff_time) }}</div>
                                     </td>
                                     <td class="py-3">
-                                        <span :class="getStatusClass(f.status)" class="text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                        <span :class="getStatusClass(f.status)" class="text-[10px] px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
                                             {{ f.status }}
                                         </span>
                                     </td>
-                                    <td class="py-3 text-center font-mono">
+                                    <td class="py-3 text-center font-mono whitespace-nowrap">
                                         {{ f.home_score !== null ? f.home_score : '-' }} : {{ f.away_score !== null ? f.away_score : '-' }}
                                     </td>
-                                    <td class="py-3 font-semibold text-blue-700">
+                                    <td class="py-3 font-semibold text-blue-700 truncate" :title="f.winner">
                                         {{ f.winner || '-' }}
                                     </td>
                                 </tr>
