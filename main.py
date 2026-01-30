@@ -85,6 +85,23 @@ async def create_user(user_in: User, admin: User = Depends(get_admin_user), sess
 async def list_users(admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
     return session.exec(select(User)).all()
 
+@app.delete("/admin/users/{user_id}")
+async def delete_user(user_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.is_admin:
+        raise HTTPException(status_code=400, detail="Cannot delete admin user")
+    
+    # Delete user's picks first
+    picks = session.exec(select(Pick).where(Pick.user_id == user_id)).all()
+    for pick in picks:
+        session.delete(pick)
+    
+    session.delete(user)
+    session.commit()
+    return {"message": "User deleted successfully"}
+
 @app.post("/admin/sync-fixtures")
 async def sync_fixtures(admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
     """Only fetches and updates fixtures and gameweek deadlines."""
@@ -227,6 +244,55 @@ async def get_gameweeks(admin: User = Depends(get_admin_user), session: Session 
 @app.get("/admin/fixtures/{gw_id}")
 async def get_gw_fixtures(gw_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
     return session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id).order_by(Fixture.kickoff_time)).all()
+
+@app.get("/admin/picks/{gw_id}")
+async def get_admin_picks(gw_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    users = session.exec(select(User).where(User.is_admin == False)).all()
+    picks = session.exec(select(Pick).where(Pick.gameweek_id == gw_id)).all()
+    picks_map = {p.user_id: p for p in picks}
+    
+    results = []
+    for u in users:
+        results.append({
+            "user_id": u.id,
+            "user_name": u.name,
+            "is_active": u.is_active,
+            "team_name": picks_map[u.id].team_name if u.id in picks_map else None
+        })
+    return results
+
+@app.post("/admin/picks/{gw_id}/batch")
+async def batch_update_admin_picks(gw_id: int, picks_in: List[dict], admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    # Get all fixtures for this GW to validate teams
+    fixtures = session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id)).all()
+    valid_teams = set()
+    for f in fixtures:
+        valid_teams.add(f.home_team)
+        valid_teams.add(f.away_team)
+
+    for p in picks_in:
+        user_id = p.get('user_id')
+        team_name = p.get('team_name')
+        
+        if team_name and team_name not in valid_teams:
+            continue # Or raise error, but skipping invalid teams in batch is safer
+        
+        existing_pick = session.exec(select(Pick).where(and_(Pick.user_id == user_id, Pick.gameweek_id == gw_id))).first()
+        
+        if not team_name:
+            if existing_pick:
+                session.delete(existing_pick)
+        else:
+            if existing_pick:
+                if existing_pick.team_name != team_name:
+                    existing_pick.team_name = team_name
+                    existing_pick.timestamp = datetime.utcnow()
+            else:
+                new_pick = Pick(user_id=user_id, gameweek_id=gw_id, team_name=team_name)
+                session.add(new_pick)
+    
+    session.commit()
+    return {"message": "Picks updated successfully"}
 
 # --- Player Routes ---
 

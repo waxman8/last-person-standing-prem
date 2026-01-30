@@ -32,14 +32,21 @@
                     <span class="mr-2">👥</span> Players
                 </h2>
                 <div class="space-y-4 mb-6 max-h-96 overflow-y-auto">
-                    <div v-for="u in users" :key="u.id" class="flex justify-between items-center border-b pb-2">
-                        <div>
+                    <div v-for="u in users" :key="u.id" class="flex justify-between items-center border-b pb-2 group">
+                        <div class="flex flex-col">
                             <span class="font-medium">{{ u.name }}</span>
-                            <span class="ml-2 text-xs bg-gray-200 px-2 rounded">{{ u.pin }}</span>
+                            <span class="text-[10px] text-gray-500">PIN: {{ u.pin }}</span>
                         </div>
-                        <span :class="u.is_active ? 'text-green-600' : 'text-red-600'" class="text-sm font-bold">
-                            {{ u.is_active ? 'Active' : 'Out' }}
-                        </span>
+                        <div class="flex items-center space-x-3">
+                            <span :class="u.is_active ? 'text-green-600' : 'text-red-600'" class="text-xs font-bold uppercase tracking-wider">
+                                {{ u.is_active ? 'Active' : 'Out' }}
+                            </span>
+                            <button v-if="!u.is_admin" @click="deleteUser(u)" class="text-gray-300 hover:text-red-600 transition p-1" title="Delete Player">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="bg-blue-50 p-4 rounded">
@@ -159,6 +166,64 @@
                 </div>
             </div>
 
+            <!-- Picks Management -->
+            <div class="bg-white p-6 rounded-lg shadow-md lg:col-span-3">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold flex items-center">
+                        <span class="mr-2">📝</span> Player Picks - Gameweek {{ selectedGWId }}
+                    </h2>
+                    <div v-if="selectedGW" class="text-sm flex items-center space-x-4">
+                        <span v-if="selectedGW.is_current" class="text-green-600 font-bold">● Active Week - Editable</span>
+                        <span v-else class="text-gray-500 font-medium">View Only</span>
+                        
+                        <button v-if="selectedGW.is_current"
+                                @click="saveAllPicks"
+                                :disabled="savingPicks"
+                                class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 disabled:opacity-50 transition">
+                            {{ savingPicks ? 'Saving...' : 'Save All Picks' }}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b text-left text-gray-600">
+                                <th class="pb-2 font-semibold">Player</th>
+                                <th class="pb-2 font-semibold">Status</th>
+                                <th class="pb-2 font-semibold">Current Pick</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            <tr v-for="p in userPicks" :key="p.user_id" class="hover:bg-gray-50">
+                                <td class="py-3 font-medium">{{ p.user_name }}</td>
+                                <td class="py-3">
+                                    <span :class="p.is_active ? 'text-green-600' : 'text-red-600'" class="font-bold">
+                                        {{ p.is_active ? 'Active' : 'Out' }}
+                                    </span>
+                                </td>
+                                <td class="py-3">
+                                    <template v-if="selectedGW && selectedGW.is_current && p.is_active">
+                                        <select v-model="p.team_name" class="border rounded p-1 text-sm w-full max-w-xs">
+                                            <option :value="null">-- No Pick --</option>
+                                            <option v-for="team in availableTeams" :key="team" :value="team">
+                                                {{ team }}
+                                            </option>
+                                        </select>
+                                    </template>
+                                    <template v-else>
+                                        <div class="flex items-center">
+                                            <img v-if="p.team_name" :src="getLogoUrl(p.team_name)" class="w-5 h-5 mr-2 object-contain" @error="handleLogoError">
+                                            <span>{{ p.team_name || 'No Pick' }}</span>
+                                        </div>
+                                    </template>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <button @click="logout" class="lg:col-span-3 text-gray-500 hover:underline text-center mt-4">Logout</button>
         </div>
     </div>
@@ -179,6 +244,8 @@
                     selectedGWId: null,
                     fixtures: [],
                     currentGW: null,
+                    userPicks: [],
+                    savingPicks: false,
                     teamBadges: {
                         "Arsenal FC": 57,
                         "Aston Villa FC": 58,
@@ -217,12 +284,23 @@
             },
             watch: {
                 selectedGWId(newId) {
-                    if (newId) this.loadFixtures(newId);
+                    if (newId) {
+                        this.loadFixtures(newId);
+                        this.loadPicks(newId);
+                    }
                 }
             },
             computed: {
                 selectedGW() {
                     return this.gameweeks.find(g => g.id === this.selectedGWId);
+                },
+                availableTeams() {
+                    const teams = new Set();
+                    this.fixtures.forEach(f => {
+                        teams.add(f.home_team);
+                        teams.add(f.away_team);
+                    });
+                    return Array.from(teams).sort();
                 }
             },
             methods: {
@@ -275,6 +353,40 @@
                         this.fixtures = await res.json();
                     }
                 },
+                async loadPicks(gwId) {
+                    const res = await fetch(`/admin/picks/${gwId}`, { headers: { 'Authorization': `Bearer ${this.token}` } });
+                    if (res.ok) {
+                        this.userPicks = await res.json();
+                    }
+                },
+                async saveAllPicks() {
+                    this.savingPicks = true;
+                    try {
+                        const payload = this.userPicks.map(p => ({
+                            user_id: p.user_id,
+                            team_name: p.team_name
+                        }));
+                        const res = await fetch(`/admin/picks/${this.selectedGWId}/batch`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${this.token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(payload)
+                        });
+                        if (res.ok) {
+                            alert("All picks updated successfully");
+                            await this.loadPicks(this.selectedGWId);
+                        } else {
+                            const data = await res.json();
+                            alert("Error: " + data.detail);
+                        }
+                    } catch (e) {
+                        alert("Failed to update picks");
+                    } finally {
+                        this.savingPicks = false;
+                    }
+                },
                 async addUser() {
                     const res = await fetch('/admin/users', {
                         method: 'POST',
@@ -286,7 +398,31 @@
                     });
                     if (res.ok) {
                         this.newUser = { name: '', pin: '' };
-                        await this.loadUsers();
+                        await Promise.all([
+                            this.loadUsers(),
+                            this.selectedGWId ? this.loadPicks(this.selectedGWId) : Promise.resolve()
+                        ]);
+                    }
+                },
+                async deleteUser(user) {
+                    if (!confirm(`Are you sure you want to delete ${user.name}? This will also remove all their picks.`)) return;
+                    
+                    try {
+                        const res = await fetch(`/admin/users/${user.id}`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${this.token}` }
+                        });
+                        if (res.ok) {
+                            await Promise.all([
+                                this.loadUsers(),
+                                this.selectedGWId ? this.loadPicks(this.selectedGWId) : Promise.resolve()
+                            ]);
+                        } else {
+                            const data = await res.json();
+                            alert("Error: " + data.detail);
+                        }
+                    } catch (e) {
+                        alert("Failed to delete user");
                     }
                 },
                 async syncFixtures() {
