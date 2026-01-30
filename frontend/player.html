@@ -47,7 +47,17 @@
                             <option :value="f.away_team">{{ f.away_team }} (vs {{ f.home_team }})</option>
                         </template>
                     </select>
-                    <button @click="submitPick" class="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700 transition">Confirm Pick</button>
+
+                    <!-- Pick Preview -->
+                    <div v-if="selectedTeam" class="flex items-center justify-center mb-6 p-4 border-2 border-dashed border-blue-200 rounded-lg bg-blue-50 transition-all duration-300">
+                        <img :src="getLogoUrl(selectedTeam)" class="w-16 h-16 object-contain mr-4 drop-shadow-md" @error="handleLogoError">
+                        <div>
+                            <p class="text-xs text-blue-600 uppercase font-bold tracking-wider">Your Selection</p>
+                            <p class="text-xl font-black text-blue-900">{{ selectedTeam }}</p>
+                        </div>
+                    </div>
+
+                    <button @click="submitPick" class="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700 transition shadow-lg">Confirm Pick</button>
                 </div>
                 <div v-else class="text-center text-gray-500 py-4">No active gameweek or fixtures available.</div>
                 <p v-if="pickMsg" class="mt-4 text-center font-bold" :class="pickMsg.includes('Success') ? 'text-green-600' : 'text-red-600'">{{ pickMsg }}</p>
@@ -68,7 +78,10 @@
                         <tbody>
                             <tr v-for="entry in history" :key="entry.gameweek_id" class="border-b last:border-0">
                                 <td class="py-2">{{ entry.gameweek_id }}</td>
-                                <td class="py-2">{{ entry.team_name }}</td>
+                                <td class="py-2 flex items-center">
+                                    <img :src="getLogoUrl(entry.team_name)" class="w-6 h-6 object-contain mr-2" @error="handleLogoError">
+                                    {{ entry.team_name }}
+                                </td>
                                 <td class="py-2 text-right">
                                     <span :class="{
                                         'text-green-600 font-bold': entry.outcome === 'WON' || entry.outcome.includes('THROUGH'),
@@ -90,8 +103,11 @@
                 <div class="space-y-3">
                     <div v-for="player in standings" class="flex justify-between border-b pb-2">
                         <span :class="{'line-through text-gray-400': !player.is_active}">{{ player.name }}</span>
-                        <span class="font-medium">
-                            <span v-if="player.current_pick" class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{{ player.current_pick }}</span>
+                        <span class="font-medium min-w-0 ml-4">
+                            <span v-if="player.current_pick" class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm flex items-center truncate max-w-[150px]" :title="player.current_pick">
+                                <img :src="getLogoUrl(player.current_pick)" class="w-4 h-4 object-contain mr-1 flex-shrink-0" @error="handleLogoError">
+                                <span class="truncate">{{ player.current_pick }}</span>
+                            </span>
                             <span v-else-if="!player.is_active" class="text-red-500 text-sm italic">Out</span>
                             <span v-else class="text-gray-400 text-sm italic">???</span>
                         </span>
@@ -116,7 +132,36 @@
                     history: [],
                     selectedTeam: '',
                     error: '',
-                    pickMsg: ''
+                    pickMsg: '',
+                    teamBadges: {
+                        "Arsenal FC": 57,
+                        "Aston Villa FC": 58,
+                        "AFC Bournemouth": 1044,
+                        "Brentford FC": 402,
+                        "Brighton & Hove Albion FC": 397,
+                        "Chelsea FC": 61,
+                        "Crystal Palace FC": 354,
+                        "Everton FC": 62,
+                        "Fulham FC": 63,
+                        "Ipswich Town FC": 349,
+                        "Leicester City FC": 338,
+                        "Liverpool FC": 64,
+                        "Manchester City FC": 65,
+                        "Manchester United FC": 66,
+                        "Newcastle United FC": 67,
+                        "Nottingham Forest FC": 351,
+                        "Southampton FC": 340,
+                        "Tottenham Hotspur FC": 73,
+                        "West Ham United FC": 563,
+                        "Wolverhampton Wanderers FC": 76,
+                        "Leeds United FC": 341,
+                        "Sunderland AFC": 71,
+                        "Burnley FC": 328,
+                        "Luton Town FC": 389,
+                        "Sheffield United FC": 356,
+                        "Norwich City FC": 332,
+                        "Watford FC": 346
+                    }
                 }
             },
             async mounted() {
@@ -178,6 +223,37 @@
                 },
                 formatDate(dateStr) {
                     return new Date(dateStr).toLocaleString();
+                },
+                getLogoUrl(teamName) {
+                    if (!teamName) return 'https://www.premierleague.com/resources/rebrand/v7.123.14/i/elements/badges/t-default.png';
+                    
+                    // Direct match
+                    let id = this.teamBadges[teamName];
+                    
+                    // Fuzzy match (handles name variations)
+                    if (!id) {
+                        const cleanName = teamName.replace(/\s+(FC|AFC|City|United)$/i, '').toLowerCase();
+                        const entry = Object.entries(this.teamBadges).find(([name]) =>
+                            name.toLowerCase().includes(cleanName)
+                        );
+                        if (entry) id = entry[1];
+                    }
+
+                    if (!id) return 'https://www.premierleague.com/resources/rebrand/v7.123.14/i/elements/badges/t-default.png';
+                    // Using .svg as primary and .png as secondary via error handler
+                    return `https://crests.football-data.org/${id}.svg`;
+                },
+                handleLogoError(event) {
+                    const fallback = 'https://www.premierleague.com/resources/rebrand/v7.123.14/i/elements/badges/t-default.png';
+                    const src = event.target.src;
+                    
+                    if (src.endsWith('.svg')) {
+                        // If SVG fails, try PNG
+                        event.target.src = src.replace('.svg', '.png');
+                    } else if (src !== fallback) {
+                        // If PNG fails, use fallback
+                        event.target.src = fallback;
+                    }
                 }
             }
         }).mount('#app');
