@@ -32,7 +32,7 @@
                     <span class="mr-2">👥</span> Players
                 </h2>
                 <div class="space-y-4 mb-6 max-h-96 overflow-y-auto">
-                    <div v-for="u in users" :key="u.id" class="flex justify-between items-center border-b pb-2 group">
+                    <div v-for="u in sortedUsers" :key="u.id" class="flex justify-between items-center border-b pb-2 group">
                         <div class="flex flex-col">
                             <span class="font-medium">{{ u.name }}</span>
                             <span class="text-[10px] text-gray-500">PIN: {{ u.pin }}</span>
@@ -107,7 +107,7 @@
                             <span v-if="selectedGW.is_processed" class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">PROCESSED</span>
                             <span v-else class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-bold">OPEN</span>
                             
-                            <button v-if="!selectedGW.is_processed" @click="applyResults(selectedGW.id)" :disabled="processing" 
+                            <button v-if="selectedGW.is_current && !selectedGW.is_processed" @click="applyResults(selectedGW.id)" :disabled="processing"
                                     class="bg-green-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-green-700 disabled:opacity-50">
                                 Apply Results
                             </button>
@@ -195,7 +195,7 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y">
-                            <tr v-for="p in userPicks" :key="p.user_id" class="hover:bg-gray-50">
+                            <tr v-for="p in sortedUserPicks" :key="p.user_id" class="hover:bg-gray-50">
                                 <td class="py-3 font-medium">{{ p.user_name }}</td>
                                 <td class="py-3">
                                     <span :class="p.is_active ? 'text-green-600' : 'text-red-600'" class="font-bold">
@@ -301,6 +301,12 @@
                         teams.add(f.away_team);
                     });
                     return Array.from(teams).sort();
+                },
+                sortedUsers() {
+                    return [...this.users].sort((a, b) => a.name.localeCompare(b.name));
+                },
+                sortedUserPicks() {
+                    return [...this.userPicks].sort((a, b) => a.user_name.localeCompare(b.user_name));
                 }
             },
             methods: {
