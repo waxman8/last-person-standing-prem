@@ -354,6 +354,29 @@ async def make_pick(team_name: str, current_user: User = Depends(get_current_use
     session.commit()
     return {"message": "Pick saved"}
 
+@app.get("/public/standings")
+async def get_public_standings(session: Session = Depends(get_session)):
+    users = session.exec(select(User).where(User.is_admin == False)).all()
+    current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
+    
+    results = []
+    for u in users:
+        pick = None
+        if current_gw:
+            pick_obj = session.exec(select(Pick).where(and_(Pick.user_id == u.id, Pick.gameweek_id == current_gw.id))).first()
+            if pick_obj:
+                pick = pick_obj.team_name
+        
+        results.append({
+            "name": u.name,
+            "is_active": u.is_active,
+            "current_pick": pick
+        })
+    return {
+        "gw_id": current_gw.id if current_gw else None,
+        "standings": results
+    }
+
 @app.get("/standings")
 async def get_standings(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     users = session.exec(select(User).where(User.is_admin == False)).all()

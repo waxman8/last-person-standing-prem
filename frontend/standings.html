@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Public Standings - Last Person Standing</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div id="app" class="container mx-auto px-4 py-8 max-w-3xl">
+        <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+            <h1 class="text-2xl md:text-3xl font-black text-blue-900 tracking-tight flex items-center">
+                <span class="mr-2">⚽</span> Picks for the week <span class="ml-2 text-blue-500 text-sm font-bold bg-blue-50 px-2 py-1 rounded border border-blue-100" v-if="gwId">GW {{ gwId }}</span>
+            </h1>
+            <div class="flex items-center gap-2">
+                <a href="/index.html" class="text-sm font-medium text-gray-500 hover:text-blue-600 transition">Home</a>
+                <span class="text-gray-300">|</span>
+                <span class="text-sm text-gray-400">View Only</span>
+            </div>
+        </div>
+
+        <div v-if="!loading" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-black text-gray-400 uppercase tracking-widest">Players</p>
+                    <p class="text-2xl font-black text-blue-900">{{ standings.length }}</p>
+                </div>
+                <div class="bg-blue-50 p-2 rounded-lg text-blue-500">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                </div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-black text-gray-400 uppercase tracking-widest">Standing</p>
+                    <p class="text-2xl font-black text-green-600">{{ activeCount }}</p>
+                </div>
+                <div class="bg-green-50 p-2 rounded-lg text-green-500">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-black text-gray-400 uppercase tracking-widest">Prize Pot</p>
+                    <p class="text-2xl font-black text-orange-600">£{{ standings.length * 5 }}</p>
+                </div>
+                <div class="bg-orange-50 p-2 rounded-lg text-orange-500">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="loading" class="flex justify-center py-20">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-900"></div>
+        </div>
+
+        <div v-else>
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <!-- Toolbar -->
+                <div class="px-6 py-4 bg-gray-50/50 border-b border-gray-100 flex flex-wrap justify-between items-center gap-4">
+                    <div class="flex items-center gap-4">
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Sort by:</span>
+                        <div class="flex bg-white rounded-lg p-1 border border-gray-200 shadow-sm">
+                            <button 
+                                @click="sortBy = 'name'" 
+                                :class="sortBy === 'name' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'"
+                                class="px-3 py-1 rounded-md text-xs font-bold transition-all"
+                            >PLAYER</button>
+                            <button 
+                                @click="sortBy = 'team'" 
+                                :class="sortBy === 'team' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'"
+                                class="px-3 py-1 rounded-md text-xs font-bold transition-all"
+                            >TEAM</button>
+                        </div>
+                    </div>
+                    <div class="flex gap-4">
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                            <span class="text-xs font-medium text-gray-600">Active ({{ activeCount }})</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 rounded-full bg-gray-300"></div>
+                            <span class="text-xs font-medium text-gray-400">Out</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-white">
+                                <th class="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Player</th>
+                                <th class="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Pick</th>
+                                <th class="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 text-right">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-50">
+                            <tr v-for="player in sortedStandings" :key="player.name" class="hover:bg-blue-50/30 transition-colors">
+                                <td class="px-6 py-4">
+                                    <div class="font-bold text-gray-900" :class="{'opacity-40 line-through': !player.is_active}">
+                                        {{ player.name }}
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div v-if="player.current_pick" class="flex items-center group">
+                                        <div class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full mr-3 border border-gray-100 group-hover:border-blue-200 transition-colors">
+                                            <img :src="getLogoUrl(player.current_pick)" class="w-6 h-6 object-contain" @error="handleLogoError">
+                                        </div>
+                                        <span class="font-semibold text-blue-900">{{ player.current_pick }}</span>
+                                    </div>
+                                    <div v-else-if="!player.is_active" class="text-gray-400 italic text-sm">
+                                        Eliminated
+                                    </div>
+                                    <div v-else class="text-red-400 italic text-sm font-medium">
+                                        No pick made
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    <span v-if="player.is_active" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-black bg-green-100 text-green-800 uppercase tracking-tighter">
+                                        Active
+                                    </span>
+                                    <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-black bg-gray-100 text-gray-400 uppercase tracking-tighter">
+                                        Out
+                                    </span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+        createApp({
+            data() {
+                return {
+                    standings: [],
+                    gwId: null,
+                    loading: true,
+                    sortBy: 'name',
+                    teamBadges: {
+                        "Arsenal FC": 57, "Aston Villa FC": 58, "AFC Bournemouth": 1044,
+                        "Brentford FC": 402, "Brighton & Hove Albion FC": 397, "Chelsea FC": 61,
+                        "Crystal Palace FC": 354, "Everton FC": 62, "Fulham FC": 63,
+                        "Ipswich Town FC": 349, "Leicester City FC": 338, "Liverpool FC": 64,
+                        "Manchester City FC": 65, "Manchester United FC": 66, "Newcastle United FC": 67,
+                        "Nottingham Forest FC": 351, "Southampton FC": 340, "Tottenham Hotspur FC": 73,
+                        "West Ham United FC": 563, "Wolverhampton Wanderers FC": 76, "Leeds United FC": 341,
+                        "Sunderland AFC": 71, "Burnley FC": 328, "Luton Town FC": 389,
+                        "Sheffield United FC": 356, "Norwich City FC": 332, "Watford FC": 346
+                    }
+                }
+            },
+            computed: {
+                activeCount() {
+                    return this.standings.filter(p => p.is_active).length;
+                },
+                sortedStandings() {
+                    return [...this.standings].sort((a, b) => {
+                        // First sort by active status
+                        if (a.is_active !== b.is_active) {
+                            return b.is_active ? 1 : -1;
+                        }
+                        
+                        if (this.sortBy === 'name') {
+                            return a.name.localeCompare(b.name);
+                        } else {
+                            const pickA = a.current_pick || 'ZZZ';
+                            const pickB = b.current_pick || 'ZZZ';
+                            return pickA.localeCompare(pickB);
+                        }
+                    });
+                }
+            },
+            async mounted() {
+                try {
+                    const res = await fetch('/public/standings');
+                    const data = await res.json();
+                    this.standings = data.standings;
+                    this.gwId = data.gw_id;
+                } catch (e) {
+                    console.error("Failed to load standings", e);
+                } finally {
+                    this.loading = false;
+                }
+            },
+            methods: {
+                getLogoUrl(teamName) {
+                    if (!teamName) return 'https://www.premierleague.com/resources/rebrand/v7.123.14/i/elements/badges/t-default.png';
+                    let id = this.teamBadges[teamName];
+                    if (!id) {
+                        const cleanName = teamName.replace(/\s+(FC|AFC|City|United)$/i, '').toLowerCase();
+                        const entry = Object.entries(this.teamBadges).find(([name]) =>
+                            name.toLowerCase().includes(cleanName)
+                        );
+                        if (entry) id = entry[1];
+                    }
+                    if (!id) return 'https://www.premierleague.com/resources/rebrand/v7.123.14/i/elements/badges/t-default.png';
+                    return `https://crests.football-data.org/${id}.svg`;
+                },
+                handleLogoError(event) {
+                    const fallback = 'https://www.premierleague.com/resources/rebrand/v7.123.14/i/elements/badges/t-default.png';
+                    const src = event.target.src;
+                    if (src.endsWith('.svg')) {
+                        event.target.src = src.replace('.svg', '.png');
+                    } else if (src !== fallback) {
+                        event.target.src = fallback;
+                    }
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
