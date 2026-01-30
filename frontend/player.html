@@ -35,32 +35,66 @@
                 </div>
             </div>
 
-            <!-- Make a Pick -->
-            <div v-if="user.is_active" class="bg-white p-6 rounded-lg shadow-md mb-8">
-                <h3 class="text-xl font-bold mb-4">Make Your Pick</h3>
-                <div v-if="fixtures.length > 0">
-                    <p class="text-sm text-gray-500 mb-4">Select one team to win this week. Deadline: {{ formatDate(fixtures[0].gameweek.deadline) }}</p>
-                    <select v-model="selectedTeam" class="w-full border p-3 rounded mb-4">
-                        <option value="">-- Choose a Team --</option>
-                        <template v-for="f in fixtures">
-                            <option :value="f.home_team">{{ f.home_team }} (vs {{ f.away_team }})</option>
-                            <option :value="f.away_team">{{ f.away_team }} (vs {{ f.home_team }})</option>
-                        </template>
-                    </select>
+            <!-- Your Pick / Make Pick Panel -->
+            <div v-if="user.is_active" class="mb-8">
+                <!-- Already have a pick -->
+                <div v-if="myCurrentPick" class="bg-gradient-to-r from-blue-600 to-indigo-700 p-8 rounded-2xl shadow-xl text-white">
+                    <h3 class="text-lg font-bold opacity-80 uppercase tracking-widest mb-4">Your pick for this week</h3>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <div class="bg-white p-3 rounded-xl mr-6 shadow-lg">
+                                <img :src="getLogoUrl(myCurrentPick)" class="w-16 h-16 object-contain" @error="handleLogoError">
+                            </div>
+                            <div>
+                                <p class="text-3xl font-black">{{ myCurrentPick }}</p>
+                                <p class="text-blue-100 opacity-75">Good luck! You've got this.</p>
+                            </div>
+                        </div>
+                        <button @click="showPickForm = !showPickForm" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-bold transition">
+                            Change Pick
+                        </button>
+                    </div>
+                </div>
 
-                    <!-- Pick Preview -->
-                    <div v-if="selectedTeam" class="flex items-center justify-center mb-6 p-4 border-2 border-dashed border-blue-200 rounded-lg bg-blue-50 transition-all duration-300">
-                        <img :src="getLogoUrl(selectedTeam)" class="w-16 h-16 object-contain mr-4 drop-shadow-md" @error="handleLogoError">
-                        <div>
-                            <p class="text-xs text-blue-600 uppercase font-bold tracking-wider">Your Selection</p>
-                            <p class="text-xl font-black text-blue-900">{{ selectedTeam }}</p>
+                <!-- Show form if no pick OR if user wants to change -->
+                <div v-if="!myCurrentPick || showPickForm" class="bg-white p-6 rounded-lg shadow-md mt-4 transition-all duration-300">
+                    <h3 class="text-xl font-bold mb-4">Make Your Pick</h3>
+                    <div v-if="fixtures.length > 0">
+                        <p class="text-sm text-gray-500 mb-4">Select one team to win this week. Deadline: {{ formatDate(fixtures[0].gameweek.deadline) }}</p>
+                        <select v-model="selectedTeam" class="w-full border p-3 rounded mb-4">
+                            <option value="">-- Choose a Team --</option>
+                            <template v-for="f in fixtures">
+                                <option :value="f.home_team">{{ f.home_team }} (vs {{ f.away_team }})</option>
+                                <option :value="f.away_team">{{ f.away_team }} (vs {{ f.home_team }})</option>
+                            </template>
+                        </select>
+
+                        <!-- Pick Preview -->
+                        <div v-if="selectedTeam" class="flex items-center justify-center mb-6 p-4 border-2 border-dashed border-blue-200 rounded-lg bg-blue-50 transition-all duration-300">
+                            <img :src="getLogoUrl(selectedTeam)" class="w-16 h-16 object-contain mr-4 drop-shadow-md" @error="handleLogoError">
+                            <div>
+                                <p class="text-xs text-blue-600 uppercase font-bold tracking-wider">Your Selection</p>
+                                <p class="text-xl font-black text-blue-900">{{ selectedTeam }}</p>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-2">
+                            <button @click="submitPick" class="flex-1 bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700 transition shadow-lg">Confirm Pick</button>
+                            <button v-if="myCurrentPick" @click="showPickForm = false" class="px-6 bg-gray-100 text-gray-600 font-bold py-3 rounded hover:bg-gray-200 transition">Cancel</button>
                         </div>
                     </div>
-
-                    <button @click="submitPick" class="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700 transition shadow-lg">Confirm Pick</button>
+                    <div v-else class="text-center text-gray-500 py-4">No active gameweek or fixtures available.</div>
+                    <p v-if="pickMsg" class="mt-4 text-center font-bold" :class="pickMsg.includes('Success') ? 'text-green-600' : 'text-red-600'">{{ pickMsg }}</p>
                 </div>
-                <div v-else class="text-center text-gray-500 py-4">No active gameweek or fixtures available.</div>
-                <p v-if="pickMsg" class="mt-4 text-center font-bold" :class="pickMsg.includes('Success') ? 'text-green-600' : 'text-red-600'">{{ pickMsg }}</p>
+            </div>
+
+            <!-- Inactive Status -->
+            <div v-else class="bg-red-50 border-2 border-red-200 p-8 rounded-2xl shadow-sm mb-8 text-center">
+                <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500">
+                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                </div>
+                <h3 class="text-2xl font-black text-red-800 mb-2">You have perished!</h3>
+                <p class="text-red-600 leading-relaxed">Sorry, you have perished and no longer in the running for the esteemed Last Person Standing.</p>
             </div>
 
             <!-- History -->
@@ -131,6 +165,7 @@
                     standings: [],
                     history: [],
                     selectedTeam: '',
+                    showPickForm: false,
                     error: '',
                     pickMsg: '',
                     teamBadges: {
@@ -162,6 +197,13 @@
                         "Norwich City FC": 332,
                         "Watford FC": 346
                     }
+                }
+            },
+            computed: {
+                myCurrentPick() {
+                    if (!this.user || !this.standings || !this.standings.length) return null;
+                    const me = this.standings.find(p => p.name === this.user.name);
+                    return me ? me.current_pick : null;
                 }
             },
             async mounted() {
@@ -216,6 +258,7 @@
                     const data = await res.json();
                     if (res.ok) {
                         this.pickMsg = "Success! Pick saved.";
+                        this.showPickForm = false;
                         await this.loadData();
                     } else {
                         this.pickMsg = "Error: " + data.detail;

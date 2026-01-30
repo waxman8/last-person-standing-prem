@@ -365,6 +365,7 @@ async def get_public_standings(session: Session = Depends(get_session)):
         if current_gw:
             pick_obj = session.exec(select(Pick).where(and_(Pick.user_id == u.id, Pick.gameweek_id == current_gw.id))).first()
             if pick_obj:
+                # Always show all picks for this week
                 pick = pick_obj.team_name
         
         results.append({
@@ -389,8 +390,8 @@ async def get_standings(current_user: User = Depends(get_current_user), session:
             pick_obj = session.exec(select(Pick).where(and_(Pick.user_id == u.id, Pick.gameweek_id == current_gw.id))).first()
             if pick_obj:
                 # Always show own pick, show others only if deadline passed
-                if u.id == current_user.id or datetime.utcnow() > current_gw.deadline:
-                    pick = pick_obj.team_name
+                # Always show all picks for this week
+                pick = pick_obj.team_name
         
         results.append({
             "name": u.name,
