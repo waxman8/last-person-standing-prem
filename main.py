@@ -166,7 +166,34 @@ async def sync_fixtures(admin: User = Depends(get_admin_user), session: Session 
                         fix.winner = "DRAW"
         
         session.commit()
-        return {"message": "Fixtures synced successfully"}
+        
+        # --- Live Processing for Current Week ---
+        current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
+        if current_gw:
+            # Find all picks for the current week
+            picks = session.exec(select(Pick).where(Pick.gameweek_id == current_gw.id)).all()
+            for pick in picks:
+                user = session.get(User, pick.user_id)
+                if not user or not user.is_active or user.is_admin:
+                    continue
+                
+                # Find the fixture for this player's pick
+                fixture = session.exec(select(Fixture).where(
+                    and_(
+                        Fixture.gameweek_id == current_gw.id,
+                        (Fixture.home_team == pick.team_name) | (Fixture.away_team == pick.team_name)
+                    )
+                )).first()
+                
+                if fixture and fixture.status == 'FINISHED':
+                    if fixture.winner != pick.team_name:
+                        # Player is out immediately
+                        user.is_active = False
+                        session.add(user)
+            
+            session.commit()
+
+        return {"message": "Fixtures synced and live results applied"}
     except Exception as e:
         # Log the error for debugging
         print(f"Sync error: {str(e)}")
@@ -184,18 +211,20 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
 
     # Check if all fixtures are finished or postponed
     fixtures = session.exec(select(Fixture).where(Fixture.gameweek_id == gw.id)).all()
-    if not all(f.status in ['FINISHED', 'POSTPONED', 'CANCELLED'] for f in fixtures):
-        # Allow processing if the admin really wants to, but maybe warn?
-        # For now, let's stick to the rule but allow it if at least some are finished.
-        finished_or_postponed = [f for f in fixtures if f.status in ['FINISHED', 'POSTPONED', 'CANCELLED']]
-        if not finished_or_postponed:
-            raise HTTPException(status_code=400, detail="No fixtures are finished yet for this gameweek")
+    all_finalized = all(f.status in ['FINISHED', 'POSTPONED', 'CANCELLED'] for f in fixtures)
+    
+    if not all_finalized:
+        # Finalizing & Rollover should only happen once the whole week is done
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot finalize and rollover: some fixtures are still in play or not yet started. Use 'Sync Live Results' instead."
+        )
 
-    # Resolve players
+    # Resolve players (this covers anyone not already eliminated live)
     picks = session.exec(select(Pick).where(Pick.gameweek_id == gw.id)).all()
     for pick in picks:
         user = session.get(User, pick.user_id)
-        if not user or not user.is_active: continue
+        if not user or not user.is_active or user.is_admin: continue
         
         # Find the fixture for this team
         fixture = next((f for f in fixtures if f.home_team == pick.team_name or f.away_team == pick.team_name), None)
@@ -203,17 +232,11 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
         if not fixture:
             continue
         
-        if fixture.status == 'POSTPONED' or fixture.status == 'CANCELLED':
-            # Automatically through for now (common LMS rule)
-            continue
-        elif fixture.status == 'FINISHED':
-            if fixture.winner == pick.team_name:
-                # Through
-                continue
-            else:
-                # Out
+        if fixture.status == 'FINISHED':
+            if fixture.winner != pick.team_name:
                 user.is_active = False
                 session.add(user)
+        # Note: POSTPONED/CANCELLED are considered 'through' by default in this LMS logic
     
     # Eliminate players who didn't pick
     active_users = session.exec(select(User).where(and_(User.is_active == True, User.is_admin == False))).all()
