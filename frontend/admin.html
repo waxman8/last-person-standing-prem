@@ -440,8 +440,8 @@
                             headers: { 'Authorization': `Bearer ${this.token}` } 
                         });
                         if (res.ok) {
-                            await this.init();
                             alert("Fixtures synced successfully!");
+                            window.location.reload();
                         } else {
                             const data = await res.json();
                             alert("Sync failed: " + data.detail);

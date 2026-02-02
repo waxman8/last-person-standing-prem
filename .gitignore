@@ -7,6 +7,9 @@ __pycache__/
 # Local database
 lms.db
 
+# Implementation plan files
+implementation_plan_live_updates.md
+
 # Environment files
 .env
 venv/
