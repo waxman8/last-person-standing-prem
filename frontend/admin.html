@@ -461,7 +461,7 @@
                         const data = await res.json();
                         if (res.ok) {
                             alert(data.message);
-                            await this.init();
+                            window.location.reload();
                         } else {
                             alert("Error: " + data.detail);
                         }
