@@ -102,6 +102,26 @@ async def delete_user(user_id: int, admin: User = Depends(get_admin_user), sessi
     session.commit()
     return {"message": "User deleted successfully"}
 
+@app.post("/admin/users/{user_id}/re-entry")
+async def user_re_entry(user_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
+    if not current_gw or not current_gw.re_entry_allowed:
+        raise HTTPException(status_code=400, detail="Re-entry not allowed in the current gameweek")
+    
+    if user.is_active:
+        raise HTTPException(status_code=400, detail="User is already active")
+    
+    user.is_active = True
+    user.number_of_re_entries += 1
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
 @app.post("/admin/sync-fixtures")
 async def sync_fixtures(admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
     """Only fetches and updates fixtures and gameweek deadlines."""
@@ -382,6 +402,8 @@ async def get_public_standings(session: Session = Depends(get_session)):
     users = session.exec(select(User).where(User.is_admin == False)).all()
     current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
     
+    total_re_entries = sum(u.number_of_re_entries for u in users)
+    
     results = []
     for u in users:
         pick = None
@@ -394,11 +416,13 @@ async def get_public_standings(session: Session = Depends(get_session)):
         results.append({
             "name": u.name,
             "is_active": u.is_active,
-            "current_pick": pick
+            "current_pick": pick,
+            "re_entries": u.number_of_re_entries
         })
     return {
         "gw_id": current_gw.id if current_gw else None,
-        "standings": results
+        "standings": results,
+        "total_re_entries": total_re_entries
     }
 
 @app.get("/standings")

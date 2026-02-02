@@ -41,6 +41,17 @@
                             <span :class="u.is_active ? 'text-green-600' : 'text-red-600'" class="text-xs font-bold uppercase tracking-wider">
                                 {{ u.is_active ? 'Active' : 'Out' }}
                             </span>
+                            <!-- Re-entry Button -->
+                            <button v-if="!u.is_admin && !u.is_active && currentGW && currentGW.re_entry_allowed"
+                                    @click="reEntryUser(u)"
+                                    class="text-purple-400 hover:text-purple-600 transition p-1"
+                                    title="Re-entry (Rise from the grave)">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h16" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 20v-7a6 6 0 1112 0v7" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14v-7m0 0l-2 2m2-2l2 2" />
+                                </svg>
+                            </button>
                             <button v-if="!u.is_admin" @click="deleteUser(u)" class="text-gray-300 hover:text-red-600 transition p-1" title="Delete Player">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -430,6 +441,26 @@
                         }
                     } catch (e) {
                         alert("Failed to delete user");
+                    }
+                },
+                async reEntryUser(user) {
+                    if (!confirm(`Allow ${user.name} to re-enter the competition?`)) return;
+                    try {
+                        const res = await fetch(`/admin/users/${user.id}/re-entry`, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${this.token}` }
+                        });
+                        if (res.ok) {
+                            await Promise.all([
+                                this.loadUsers(),
+                                this.selectedGWId ? this.loadPicks(this.selectedGWId) : Promise.resolve()
+                            ]);
+                        } else {
+                            const data = await res.json();
+                            alert("Error: " + data.detail);
+                        }
+                    } catch (e) {
+                        alert("Failed to record re-entry");
                     }
                 },
                 async syncFixtures() {
