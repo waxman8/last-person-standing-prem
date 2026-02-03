@@ -15,6 +15,7 @@ import api_client
 SECRET_KEY = "super-secret-key-change-this"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 1 week
+FIRST_GW_ID = 24
 
 app = FastAPI(title="Last Man Standing")
 
@@ -370,7 +371,20 @@ async def make_pick(team_name: str, current_user: User = Depends(get_current_use
         raise HTTPException(status_code=400, detail="Deadline passed")
     
     # Check if team already used
-    prev_pick = session.exec(select(Pick).where(and_(Pick.user_id == current_user.id, Pick.team_name == team_name))).first()
+    if current_user.number_of_re_entries > 0:
+        # Re-entry: ignore the pick from the first week (Week 24)
+        prev_pick = session.exec(select(Pick).where(and_(
+            Pick.user_id == current_user.id,
+            Pick.team_name == team_name,
+            Pick.gameweek_id != FIRST_GW_ID
+        ))).first()
+    else:
+        # Standard: team must not have been picked before
+        prev_pick = session.exec(select(Pick).where(and_(
+            Pick.user_id == current_user.id,
+            Pick.team_name == team_name
+        ))).first()
+
     if prev_pick:
         raise HTTPException(status_code=400, detail="Team already used")
     
