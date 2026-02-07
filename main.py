@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +11,8 @@ from sqlmodel import select, and_
 from database import init_db, get_session
 from models import User, Gameweek, Fixture, Pick
 import api_client
+from services import sync_fixtures_logic
+from scheduler import fixture_scheduler_worker
 
 # Security Constants
 SECRET_KEY = "super-secret-key-change-this"
@@ -23,8 +26,10 @@ app = FastAPI(title="Last Man Standing")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     init_db()
+    # Start the fixture scheduler in the background
+    asyncio.create_task(fixture_scheduler_worker())
 
 # --- Auth Helpers ---
 def create_access_token(data: dict):
@@ -127,94 +132,7 @@ async def user_re_entry(user_id: int, admin: User = Depends(get_admin_user), ses
 async def sync_fixtures(admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
     """Only fetches and updates fixtures and gameweek deadlines."""
     try:
-        matches = api_client.get_pl_fixtures()
-        if not matches:
-            raise Exception("No matches returned from API")
-        
-        current_gw_num = api_client.get_current_gameweek_number()
-        
-        # Update Gameweeks and Fixtures
-        for m in matches:
-            gw_id = m['matchday']
-            # Convert to naive UTC datetime for database compatibility
-            kickoff = datetime.fromisoformat(m['utcDate'].replace('Z', '+00:00')).replace(tzinfo=None)
-            
-            # Upsert Gameweek
-            gw = session.get(Gameweek, gw_id)
-            if not gw:
-                gw = Gameweek(id=gw_id, deadline=kickoff, is_current=(gw_id == current_gw_num))
-                session.add(gw)
-            else:
-                # Only update deadline if it's earlier
-                if kickoff < gw.deadline:
-                    gw.deadline = kickoff
-                gw.is_current = (gw_id == current_gw_num)
-            
-            # Upsert Fixture
-            fix = session.get(Fixture, m['id'])
-            if not fix:
-                fix = Fixture(
-                    id=m['id'],
-                    gameweek_id=gw_id,
-                    home_team=m['homeTeam']['name'],
-                    away_team=m['awayTeam']['name'],
-                    kickoff_time=kickoff,
-                    status=m['status']
-                )
-                session.add(fix)
-            else:
-                fix.status = m['status']
-                fix.kickoff_time = kickoff
-
-            # Update scores if available in API
-            score_data = m.get('score') or {}
-            ft_score = score_data.get('fullTime') or {}
-            home_score = ft_score.get('home')
-            away_score = ft_score.get('away')
-
-            if home_score is not None:
-                is_historic = gw_id < current_gw_num
-                # Only update historic weeks if we don't have scores locally yet
-                # For current/future weeks, always update to catch latest results
-                if not is_historic or fix.home_score is None:
-                    fix.home_score = home_score
-                    fix.away_score = away_score
-                    if fix.home_score > fix.away_score:
-                        fix.winner = fix.home_team
-                    elif fix.away_score > fix.home_score:
-                        fix.winner = fix.away_team
-                    else:
-                        fix.winner = "DRAW"
-        
-        session.commit()
-        
-        # --- Live Processing for Current Week ---
-        current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
-        if current_gw:
-            # Find all picks for the current week
-            picks = session.exec(select(Pick).where(Pick.gameweek_id == current_gw.id)).all()
-            for pick in picks:
-                user = session.get(User, pick.user_id)
-                if not user or not user.is_active or user.is_admin:
-                    continue
-                
-                # Find the fixture for this player's pick
-                fixture = session.exec(select(Fixture).where(
-                    and_(
-                        Fixture.gameweek_id == current_gw.id,
-                        (Fixture.home_team == pick.team_name) | (Fixture.away_team == pick.team_name)
-                    )
-                )).first()
-                
-                if fixture and fixture.status == 'FINISHED':
-                    if fixture.winner != pick.team_name:
-                        # Player is out immediately
-                        user.is_active = False
-                        session.add(user)
-            
-            session.commit()
-
-        return {"message": "Fixtures synced and live results applied"}
+        return sync_fixtures_logic(session)
     except Exception as e:
         # Log the error for debugging
         print(f"Sync error: {str(e)}")
