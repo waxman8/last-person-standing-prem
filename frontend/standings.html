@@ -20,6 +20,24 @@
             </div>
         </div>
 
+        <!-- Active Gameweek Panel (Read-only) -->
+        <div v-if="!loading && currentGW" class="mb-6">
+            <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-4 shadow-sm flex items-center justify-between">
+                <div>
+                    <h3 class="text-[10px] font-black text-yellow-800 uppercase tracking-widest mb-1">Active Gameweek</h3>
+                    <div class="flex items-baseline gap-2">
+                        <span class="text-2xl font-black text-yellow-900 leading-none">GW {{ currentGW.id }}</span>
+                        <span class="text-xs font-bold text-yellow-700">Deadline: {{ formatDate(currentGW.deadline) }}</span>
+                    </div>
+                </div>
+                <div class="bg-yellow-100 p-2.5 rounded-lg text-yellow-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
         <div v-if="!loading" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
                 <div>
@@ -64,7 +82,7 @@
         </div>
 
         <div v-else>
-            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-8">
                 <!-- Toolbar -->
                 <div class="px-6 py-4 bg-gray-50/50 border-b border-gray-100 flex flex-wrap justify-between items-center gap-4">
                     <div class="flex items-center gap-4">
@@ -138,6 +156,87 @@
                     </table>
                 </div>
             </div>
+
+            <!-- Gameweek Fixtures Viewer -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-8">
+                <div class="bg-gray-50/50 px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                    <div class="flex items-center space-x-4">
+                        <h2 class="text-sm font-black text-gray-400 uppercase tracking-widest">Fixtures</h2>
+                        <div class="flex items-center space-x-2 bg-white rounded-lg p-1 border border-gray-200 shadow-sm">
+                            <button @click="changeGW(-1)" class="px-2 py-0.5 hover:bg-gray-50 text-gray-500 transition-colors text-sm font-bold"><</button>
+                            <select v-model="selectedGWId" class="font-bold text-xs border-none bg-transparent focus:ring-0 cursor-pointer text-blue-900 uppercase tracking-tight px-1">
+                                <option v-for="gw in gameweeks" :key="gw.id" :value="gw.id">
+                                    GW {{ gw.id }} {{ gw.is_current ? ' (Active)' : '' }}
+                                </option>
+                            </select>
+                            <button @click="changeGW(1)" class="px-2 py-0.5 hover:bg-gray-50 text-gray-500 transition-colors text-sm font-bold">></button>
+                        </div>
+                        <span v-if="selectedGW && selectedGW.is_current" class="bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest animate-pulse">Live</span>
+                    </div>
+                    <div v-if="selectedGW" class="flex items-center space-x-3">
+                        <span v-if="selectedGW.is_processed" class="bg-green-100 text-green-800 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tighter">Processed</span>
+                        <span v-else class="bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tighter">Open</span>
+                    </div>
+                </div>
+                
+                <div class="overflow-x-auto bg-white">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-50 text-left">
+                                <th class="px-6 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest w-5/12">Match</th>
+                                <th class="px-6 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest w-2/12 text-center">Score</th>
+                                <th class="px-6 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest w-3/12">Winner</th>
+                                <th class="px-6 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest w-2/12 text-right">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-50">
+                            <tr v-for="f in fixtures" :key="f.id" class="hover:bg-blue-50/30 transition-colors">
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center w-full">
+                                        <!-- Home Team -->
+                                        <div class="flex-1 flex items-center justify-end min-w-0">
+                                            <span class="font-bold text-gray-900 truncate text-right mr-3 text-xs" :title="f.home_team">{{ f.home_team }}</span>
+                                            <div class="w-6 h-6 flex-shrink-0 flex items-center justify-center">
+                                                <img :src="getLogoUrl(f.home_team)" class="w-5 h-5 object-contain" @error="handleLogoError">
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- VS Separator -->
+                                        <div class="px-3 text-gray-300 text-[10px] font-black flex-shrink-0">VS</div>
+                                        
+                                        <!-- Away Team -->
+                                        <div class="flex-1 flex items-center min-w-0">
+                                            <div class="w-6 h-6 flex-shrink-0 flex items-center justify-center mr-3">
+                                                <img :src="getLogoUrl(f.away_team)" class="w-5 h-5 object-contain" @error="handleLogoError">
+                                            </div>
+                                            <span class="font-bold text-gray-900 truncate text-xs" :title="f.away_team">{{ f.away_team }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="text-[9px] font-bold text-gray-400 text-center mt-1 uppercase tracking-tighter">{{ formatDate(f.kickoff_time) }}</div>
+                                </td>
+                                <td class="px-6 py-4 text-center font-black text-blue-900 text-xs tabular-nums">
+                                    {{ f.home_score !== null ? f.home_score : '-' }} : {{ f.away_score !== null ? f.away_score : '-' }}
+                                </td>
+                                <td class="px-6 py-4">
+                                    <span class="font-bold text-blue-600 text-xs truncate block max-w-[120px]" :title="f.winner">
+                                        {{ f.winner || '-' }}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    <span :class="getStatusClass(f.status)" class="text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter whitespace-nowrap">
+                                        {{ f.status }}
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr v-if="fixtures.length === 0">
+                                <td colspan="4" class="px-6 py-12 text-center text-gray-400 italic text-xs font-medium tracking-wide">
+                                    No fixtures found for this gameweek.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -149,8 +248,12 @@
                     standings: [],
                     totalReEntries: 0,
                     gwId: null,
+                    currentGW: null,
                     loading: true,
                     sortBy: 'name',
+                    gameweeks: [],
+                    selectedGWId: null,
+                    fixtures: [],
                     teamBadges: {
                         "Arsenal FC": 57, "Aston Villa FC": 58, "AFC Bournemouth": 1044,
                         "Brentford FC": 402, "Brighton & Hove Albion FC": 397, "Chelsea FC": 61,
@@ -167,6 +270,9 @@
             computed: {
                 activeCount() {
                     return this.standings.filter(p => p.is_active).length;
+                },
+                selectedGW() {
+                    return this.gameweeks.find(g => g.id === this.selectedGWId);
                 },
                 sortedStandings() {
                     return [...this.standings].sort((a, b) => {
@@ -185,6 +291,13 @@
                     });
                 }
             },
+            watch: {
+                selectedGWId(newId) {
+                    if (newId) {
+                        this.loadFixtures(newId);
+                    }
+                }
+            },
             async mounted() {
                 try {
                     const res = await fetch('/public/standings');
@@ -192,6 +305,13 @@
                     this.standings = data.standings;
                     this.totalReEntries = data.total_re_entries || 0;
                     this.gwId = data.gw_id;
+
+                    // Initialize gameweeks and fixtures
+                    await this.loadGameweeks();
+                    if (this.gameweeks.length > 0) {
+                        this.currentGW = this.gameweeks.find(g => g.is_current);
+                        this.selectedGWId = this.currentGW ? this.currentGW.id : this.gameweeks[this.gameweeks.length - 1].id;
+                    }
                 } catch (e) {
                     console.error("Failed to load standings", e);
                 } finally {
@@ -199,6 +319,39 @@
                 }
             },
             methods: {
+                async loadGameweeks() {
+                    const res = await fetch('/public/gameweeks');
+                    if (res.ok) {
+                        this.gameweeks = await res.json();
+                    }
+                },
+                async loadFixtures(gwId) {
+                    const res = await fetch(`/public/fixtures/${gwId}`);
+                    if (res.ok) {
+                        this.fixtures = await res.json();
+                    }
+                },
+                changeGW(delta) {
+                    const idx = this.gameweeks.findIndex(g => g.id === this.selectedGWId);
+                    if (idx + delta >= 0 && idx + delta < this.gameweeks.length) {
+                        this.selectedGWId = this.gameweeks[idx + delta].id;
+                    }
+                },
+                formatDate(dateStr) {
+                    if (!dateStr) return '-';
+                    const d = new Date(dateStr);
+                    return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+                },
+                getStatusClass(status) {
+                    switch (status) {
+                        case 'FINISHED': return 'bg-gray-100 text-gray-500';
+                        case 'IN_PLAY': return 'bg-green-100 text-green-700';
+                        case 'TIMED': 
+                        case 'SCHEDULED': return 'bg-blue-50 text-blue-600';
+                        case 'POSTPONED': return 'bg-yellow-50 text-yellow-700';
+                        default: return 'bg-gray-50 text-gray-400';
+                    }
+                },
                 getLogoUrl(teamName) {
                     if (!teamName) return 'https://www.premierleague.com/resources/rebrand/v7.123.14/i/elements/badges/t-default.png';
                     let id = this.teamBadges[teamName];

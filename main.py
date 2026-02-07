@@ -344,6 +344,14 @@ async def make_pick(team_name: str, current_user: User = Depends(get_current_use
     session.commit()
     return {"message": "Pick saved"}
 
+@app.get("/public/gameweeks")
+async def get_public_gameweeks(session: Session = Depends(get_session)):
+    return session.exec(select(Gameweek).order_by(Gameweek.id)).all()
+
+@app.get("/public/fixtures/{gw_id}")
+async def get_public_fixtures(gw_id: int, session: Session = Depends(get_session)):
+    return session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id).order_by(Fixture.kickoff_time)).all()
+
 @app.get("/public/standings")
 async def get_public_standings(session: Session = Depends(get_session)):
     users = session.exec(select(User).where(User.is_admin == False)).all()
