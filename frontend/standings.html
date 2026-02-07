@@ -179,62 +179,109 @@
                     </div>
                 </div>
                 
-                <div class="overflow-x-auto bg-white">
-                    <table class="w-full text-sm">
-                        <thead>
-                            <tr class="border-b border-gray-50 text-left">
-                                <th class="px-6 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest w-5/12">Match</th>
-                                <th class="px-6 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest w-2/12 text-center">Score</th>
-                                <th class="px-6 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest w-3/12">Winner</th>
-                                <th class="px-6 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest w-2/12 text-right">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-50">
-                            <tr v-for="f in fixtures" :key="f.id" class="hover:bg-blue-50/30 transition-colors">
-                                <td class="px-6 py-4">
-                                    <div class="flex items-center w-full">
-                                        <!-- Home Team -->
-                                        <div class="flex-1 flex items-center justify-end min-w-0">
-                                            <span class="font-bold text-gray-900 truncate text-right mr-3 text-xs" :title="f.home_team">{{ f.home_team }}</span>
-                                            <div class="w-6 h-6 flex-shrink-0 flex items-center justify-center">
-                                                <img :src="getLogoUrl(f.home_team)" class="w-5 h-5 object-contain" @error="handleLogoError">
+                <div class="bg-white">
+                    <!-- Desktop Table View -->
+                    <div class="hidden md:block overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-gray-50 text-left">
+                                    <th class="px-6 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest w-6/12">Match</th>
+                                    <th class="px-6 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest w-3/12 text-center">Score</th>
+                                    <th class="px-6 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest w-3/12">Winner</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                <tr v-for="f in fixtures" :key="f.id" class="hover:bg-blue-50/30 transition-colors">
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center w-full">
+                                            <div class="flex-1 flex items-center justify-end min-w-0">
+                                                <span class="font-bold text-gray-900 truncate text-right mr-3 text-xs" :title="f.home_team">{{ f.home_team }}</span>
+                                                <div class="w-6 h-6 flex-shrink-0 flex items-center justify-center">
+                                                    <img :src="getLogoUrl(f.home_team)" class="w-5 h-5 object-contain" @error="handleLogoError">
+                                                </div>
+                                            </div>
+                                            <div class="px-3 text-gray-300 text-[10px] font-black flex-shrink-0">VS</div>
+                                            <div class="flex-1 flex items-center min-w-0">
+                                                <div class="w-6 h-6 flex-shrink-0 flex items-center justify-center mr-3">
+                                                    <img :src="getLogoUrl(f.away_team)" class="w-5 h-5 object-contain" @error="handleLogoError">
+                                                </div>
+                                                <span class="font-bold text-gray-900 truncate text-xs" :title="f.away_team">{{ f.away_team }}</span>
                                             </div>
                                         </div>
-                                        
-                                        <!-- VS Separator -->
-                                        <div class="px-3 text-gray-300 text-[10px] font-black flex-shrink-0">VS</div>
-                                        
-                                        <!-- Away Team -->
-                                        <div class="flex-1 flex items-center min-w-0">
-                                            <div class="w-6 h-6 flex-shrink-0 flex items-center justify-center mr-3">
-                                                <img :src="getLogoUrl(f.away_team)" class="w-5 h-5 object-contain" @error="handleLogoError">
+                                        <div class="text-[9px] font-bold text-gray-400 text-center mt-1 uppercase tracking-tighter">{{ formatDate(f.kickoff_time) }}</div>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <div class="flex flex-col items-center">
+                                            <span :class="getStatusClass(f.status)" class="text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter mb-1">
+                                                {{ f.status }}
+                                            </span>
+                                            <div class="font-black text-blue-900 text-xs tabular-nums">
+                                                {{ f.home_score !== null ? f.home_score : '-' }} : {{ f.away_score !== null ? f.away_score : '-' }}
                                             </div>
-                                            <span class="font-bold text-gray-900 truncate text-xs" :title="f.away_team">{{ f.away_team }}</span>
                                         </div>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <span v-if="f.status === 'FINISHED'" class="font-bold text-blue-600 text-xs truncate block max-w-[120px]" :title="f.winner">
+                                            {{ f.winner || '-' }}
+                                        </span>
+                                        <span v-else class="text-gray-300 text-xs">—</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Mobile Stacked View -->
+                    <div class="md:hidden divide-y divide-gray-100">
+                        <div v-for="f in fixtures" :key="f.id" class="p-4 hover:bg-blue-50/30 transition-colors">
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">
+                                    {{ formatDate(f.kickoff_time) }}
+                                </div>
+                                <span :class="getStatusClass(f.status)" class="text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">
+                                    {{ f.status }}
+                                </span>
+                            </div>
+                            
+                            <div class="flex items-center justify-between gap-2">
+                                <!-- Home Team -->
+                                <div class="flex flex-col items-center text-center flex-1 min-w-0">
+                                    <div class="w-8 h-8 flex items-center justify-center mb-1">
+                                        <img :src="getLogoUrl(f.home_team)" class="w-7 h-7 object-contain" @error="handleLogoError">
                                     </div>
-                                    <div class="text-[9px] font-bold text-gray-400 text-center mt-1 uppercase tracking-tighter">{{ formatDate(f.kickoff_time) }}</div>
-                                </td>
-                                <td class="px-6 py-4 text-center font-black text-blue-900 text-xs tabular-nums">
-                                    {{ f.home_score !== null ? f.home_score : '-' }} : {{ f.away_score !== null ? f.away_score : '-' }}
-                                </td>
-                                <td class="px-6 py-4">
-                                    <span class="font-bold text-blue-600 text-xs truncate block max-w-[120px]" :title="f.winner">
-                                        {{ f.winner || '-' }}
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4 text-right">
-                                    <span :class="getStatusClass(f.status)" class="text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter whitespace-nowrap">
-                                        {{ f.status }}
-                                    </span>
-                                </td>
-                            </tr>
-                            <tr v-if="fixtures.length === 0">
-                                <td colspan="4" class="px-6 py-12 text-center text-gray-400 italic text-xs font-medium tracking-wide">
-                                    No fixtures found for this gameweek.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                                    <span class="font-bold text-gray-900 text-[10px] leading-tight truncate w-full">{{ f.home_team }}</span>
+                                </div>
+
+                                <!-- Score -->
+                                <div class="flex flex-col items-center px-2">
+                                    <div class="text-lg font-black text-blue-900 tabular-nums">
+                                        {{ f.home_score !== null ? f.home_score : '-' }} : {{ f.away_score !== null ? f.away_score : '-' }}
+                                    </div>
+                                    <div v-if="f.status === 'FINISHED' && f.winner" class="text-[8px] font-black text-blue-600 uppercase tracking-widest mt-0.5">
+                                        {{ f.winner === 'DRAW' ? 'DRAW' : 'WINNER' }}
+                                    </div>
+                                </div>
+
+                                <!-- Away Team -->
+                                <div class="flex flex-col items-center text-center flex-1 min-w-0">
+                                    <div class="w-8 h-8 flex items-center justify-center mb-1">
+                                        <img :src="getLogoUrl(f.away_team)" class="w-7 h-7 object-contain" @error="handleLogoError">
+                                    </div>
+                                    <span class="font-bold text-gray-900 text-[10px] leading-tight truncate w-full">{{ f.away_team }}</span>
+                                </div>
+                            </div>
+
+                            <div v-if="f.status === 'FINISHED' && f.winner && f.winner !== 'DRAW'" class="mt-2 text-center">
+                                <span class="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Winner: </span>
+                                <span class="text-[9px] font-black text-blue-700 uppercase tracking-widest">{{ f.winner }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div v-if="fixtures.length === 0" class="px-6 py-12 text-center text-gray-400 italic text-xs font-medium tracking-wide">
+                        No fixtures found for this gameweek.
+                    </div>
                 </div>
             </div>
         </div>

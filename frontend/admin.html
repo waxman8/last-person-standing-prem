@@ -166,7 +166,7 @@
                                         {{ f.home_score !== null ? f.home_score : '-' }} : {{ f.away_score !== null ? f.away_score : '-' }}
                                     </td>
                                     <td class="py-3 font-semibold text-blue-700 truncate" :title="f.winner">
-                                        {{ f.winner || '-' }}
+                                        {{ f.status === 'FINISHED' ? (f.winner || '-') : '-' }}
                                     </td>
                                 </tr>
                                 <tr v-if="fixtures.length === 0">
