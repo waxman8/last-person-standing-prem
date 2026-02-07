@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import sys
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +22,16 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 1 week
 FIRST_GW_ID = 24
 
+# Configure logging to match the uvicorn style
+from uvicorn.logging import DefaultFormatter
+
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(DefaultFormatter('%(levelname)s:     %(message)s'))
+logging.root.handlers = [handler]
+logging.root.setLevel(logging.INFO)
+
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Last Man Standing")
 
 # OAuth2 context
@@ -29,6 +41,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 async def on_startup():
     init_db()
     # Start the fixture scheduler in the background
+    # Log the date and time manually for the scheduler start as requested
+    now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+    logger.info(f"{now} - scheduler - Fixture scheduler worker started")
     asyncio.create_task(fixture_scheduler_worker())
 
 # --- Auth Helpers ---
@@ -135,7 +150,7 @@ async def sync_fixtures(admin: User = Depends(get_admin_user), session: Session 
         return sync_fixtures_logic(session)
     except Exception as e:
         # Log the error for debugging
-        print(f"Sync error: {str(e)}")
+        logger.error(f"Sync error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/admin/apply-results/{gw_id}")
