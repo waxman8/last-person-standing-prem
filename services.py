@@ -12,6 +12,9 @@ def sync_fixtures_logic(session):
     
     current_gw_num = api_client.get_current_gameweek_number()
     
+    # Check if a current gameweek already exists to avoid overriding it
+    existing_current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
+    
     # Update Gameweeks and Fixtures
     for m in matches:
         gw_id = m['matchday']
@@ -20,12 +23,15 @@ def sync_fixtures_logic(session):
         # Upsert Gameweek
         gw = session.get(Gameweek, gw_id)
         if not gw:
-            gw = Gameweek(id=gw_id, deadline=kickoff, is_current=(gw_id == current_gw_num))
+            is_curr = (gw_id == current_gw_num) if not existing_current_gw else False
+            gw = Gameweek(id=gw_id, deadline=kickoff, is_current=is_curr)
             session.add(gw)
         else:
             if kickoff < gw.deadline:
                 gw.deadline = kickoff
-            gw.is_current = (gw_id == current_gw_num)
+            # Only update is_current if no gameweek is currently set as current
+            if not existing_current_gw:
+                gw.is_current = (gw_id == current_gw_num)
         
         # Upsert Fixture
         fix = session.get(Fixture, m['id'])
@@ -50,7 +56,10 @@ def sync_fixtures_logic(session):
         away_score = ft_score.get('away')
 
         if home_score is not None:
-            is_historic = gw_id < current_gw_num
+            # Use our established current gameweek to determine if a match is historic
+            # if no current GW exists yet, fall back to the API suggestion
+            ref_gw_id = existing_current_gw.id if existing_current_gw else current_gw_num
+            is_historic = gw_id < ref_gw_id
             if not is_historic or fix.home_score is None:
                 fix.home_score = home_score
                 fix.away_score = away_score
