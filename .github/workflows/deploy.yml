@@ -44,4 +44,6 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
         run: |
           IMAGE_TAG=${{ github.sha }}
+          kubectl apply -f k8s/pvc.yaml
+          kubectl apply -f k8s/service.yaml
           sed "s|IMAGE_PLACEHOLDER|$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" k8s/deployment.yaml | kubectl apply -f -
