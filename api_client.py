@@ -9,18 +9,22 @@ BASE_URL = "https://api.football-data.org/v4"
 def get_pl_fixtures() -> List[Dict]:
     """Fetch Premier League fixtures for the current season."""
     if not API_KEY:
-        print("Warning: FOOTBALL_DATA_API_KEY not set")
-        return []
+        raise Exception("FOOTBALL_DATA_API_KEY environment variable is not set")
         
     headers = {"X-Auth-Token": API_KEY}
     url = f"{BASE_URL}/competitions/PL/matches"
     
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json().get("matches", [])
-    else:
-        print(f"Error fetching fixtures: {response.status_code} - {response.text}")
-        return []
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            matches = response.json().get("matches", [])
+            if not matches:
+                raise Exception("API returned 200 OK but the 'matches' list is empty. This could mean the competition ID is wrong or no matches are scheduled.")
+            return matches
+        else:
+            raise Exception(f"API Error {response.status_code}: {response.text}")
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Connection error to Football API: {str(e)}")
 
 def get_current_gameweek_number() -> int:
     """Fetch current gameweek number from competition info."""
@@ -28,7 +32,10 @@ def get_current_gameweek_number() -> int:
         return 1
     headers = {"X-Auth-Token": API_KEY}
     url = f"{BASE_URL}/competitions/PL"
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json().get("currentSeason", {}).get("currentMatchday", 1)
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json().get("currentSeason", {}).get("currentMatchday", 1)
+    except:
+        pass
     return 1

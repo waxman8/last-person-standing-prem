@@ -5,6 +5,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: gp2
   resources:
     requests:
-      storage: 100Mi
+      storage: 1Gi  # Reverting to 1Gi as many storage classes have a 1Gi minimum

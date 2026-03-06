@@ -30,5 +30,6 @@ spec:
           mountPath: /app/data
       volumes:
       - name: data-storage
-        persistentVolumeClaim:
-          claimName: lms-pvc
+        hostPath:
+          path: /data/lms
+          type: DirectoryOrCreate

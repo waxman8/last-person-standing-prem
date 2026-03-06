@@ -7,8 +7,6 @@ import api_client
 def sync_fixtures_logic(session):
     """Core logic to fetch and update fixtures, and process live results."""
     matches = api_client.get_pl_fixtures()
-    if not matches:
-        raise Exception("No matches returned from API")
     
     current_gw_num = api_client.get_current_gameweek_number()
     
