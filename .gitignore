@@ -15,8 +15,9 @@ implementation_plan_live_updates.md
 venv/
 env/
 
-# IDE files
+# IDE and OS files
 .vscode/
 .idea/
 *.swp
 *.swo
+.DS_Store

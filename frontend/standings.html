@@ -7,9 +7,35 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚽</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 </head>
 <body class="bg-gray-50 min-h-screen">
-    <div id="app" class="container mx-auto px-4 py-8 max-w-3xl">
+    <div id="app" class="container mx-auto px-4 py-8 max-w-3xl relative">
+        <!-- Winner Celebration Overlay -->
+        <div v-if="activeCount === 1 && winner && !hideCelebration" class="fixed inset-0 z-50 flex items-center justify-center bg-blue-900/90 backdrop-blur-sm p-4 overflow-hidden pointer-events-none">
+            <div class="relative bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center transform scale-110 pointer-events-auto border-4 border-yellow-400">
+                <!-- Decorative Balloons (CSS only) -->
+                <div class="absolute -top-12 -left-8 text-4xl animate-bounce" style="animation-delay: 0.2s">🎈</div>
+                <div class="absolute -top-16 right-0 text-5xl animate-bounce" style="animation-delay: 0.5s">🎈</div>
+                <div class="absolute -bottom-8 -right-4 text-4xl animate-bounce" style="animation-delay: 0.8s">✨</div>
+                
+                <div class="text-6xl mb-4">🏆</div>
+                <h2 class="text-xs font-black text-yellow-600 uppercase tracking-[0.2em] mb-2">Ultimate Winner</h2>
+                <div class="text-3xl font-black text-blue-900 mb-6 leading-tight">
+                    {{ winner.name }}
+                </div>
+                
+                <div class="bg-blue-50 rounded-2xl p-4 mb-6">
+                    <p class="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-1">Total Prize</p>
+                    <p class="text-3xl font-black text-blue-600">£{{ (standings.length + totalReEntries) * 5 }}</p>
+                </div>
+
+                <button @click="hideCelebration = true" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl transition-all shadow-lg shadow-blue-200 uppercase tracking-widest text-xs">
+                    View Standings
+                </button>
+            </div>
+        </div>
+
         <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
             <h1 class="text-2xl md:text-3xl font-black text-blue-900 tracking-tight flex items-center">
                 <span class="mr-2">⚽</span> Picks for the week <span class="ml-2 text-blue-500 text-sm font-bold bg-blue-50 px-2 py-1 rounded border border-blue-100" v-if="gwId">GW {{ gwId }}</span>
@@ -302,6 +328,8 @@
                     gameweeks: [],
                     selectedGWId: null,
                     fixtures: [],
+                    hasCelebrated: false,
+                    hideCelebration: false,
                     teamBadges: {
                         "Arsenal FC": 57, "Aston Villa FC": 58, "AFC Bournemouth": 1044,
                         "Brentford FC": 402, "Brighton & Hove Albion FC": 397, "Chelsea FC": 61,
@@ -318,6 +346,12 @@
             computed: {
                 activeCount() {
                     return this.standings.filter(p => p.is_active).length;
+                },
+                winner() {
+                    if (this.activeCount === 1) {
+                        return this.standings.find(p => p.is_active);
+                    }
+                    return null;
                 },
                 selectedGW() {
                     return this.gameweeks.find(g => g.id === this.selectedGWId);
@@ -344,6 +378,11 @@
                     if (newId) {
                         this.loadFixtures(newId);
                     }
+                },
+                activeCount(newCount, oldCount) {
+                    if (newCount === 1 && (oldCount > 1 || (oldCount === 0 && !this.loading)) && !this.hasCelebrated) {
+                        this.triggerCelebration();
+                    }
                 }
             },
             async mounted() {
@@ -359,6 +398,10 @@
                     if (this.gameweeks.length > 0) {
                         this.currentGW = this.gameweeks.find(g => g.is_current);
                         this.selectedGWId = this.currentGW ? this.currentGW.id : this.gameweeks[this.gameweeks.length - 1].id;
+                    }
+
+                    if (this.activeCount === 1) {
+                        this.triggerCelebration();
                     }
                 } catch (e) {
                     console.error("Failed to load standings", e);
@@ -389,6 +432,46 @@
                     if (!dateStr) return '-';
                     const d = new Date(dateStr);
                     return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+                },
+                triggerCelebration() {
+                    if (this.hasCelebrated) return;
+                    this.hasCelebrated = true;
+                    
+                    // Initial burst
+                    confetti({
+                        particleCount: 150,
+                        spread: 70,
+                        origin: { y: 0.6 },
+                        colors: ['#1e3a8a', '#fbbf24', '#3b82f6', '#ffffff']
+                    });
+
+                    // Side bursts after a short delay
+                    setTimeout(() => {
+                        const duration = 3 * 1000;
+                        const end = Date.now() + duration;
+
+                        const frame = () => {
+                            confetti({
+                                particleCount: 2,
+                                angle: 60,
+                                spread: 55,
+                                origin: { x: 0 },
+                                colors: ['#1e3a8a', '#fbbf24']
+                            });
+                            confetti({
+                                particleCount: 2,
+                                angle: 120,
+                                spread: 55,
+                                origin: { x: 1 },
+                                colors: ['#3b82f6', '#ffffff']
+                            });
+
+                            if (Date.now() < end) {
+                                requestAnimationFrame(frame);
+                            }
+                        };
+                        frame();
+                    }, 500);
                 },
                 getStatusClass(status) {
                     switch (status) {
