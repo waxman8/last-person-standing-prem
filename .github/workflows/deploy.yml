@@ -44,6 +44,15 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
         run: |
           IMAGE_TAG=${{ github.sha }}
+          # Apply base resources
           kubectl apply -f k8s/pvc.yaml
+          kubectl apply -f k8s/caddy-pvc.yaml
+          kubectl apply -f k8s/caddy-config.yaml
           kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/caddy-service.yaml
+          
+          # Apply Caddy deployment
+          kubectl apply -f k8s/caddy-deployment.yaml
+          
+          # Inject image tag and apply app deployment
           sed "s|IMAGE_PLACEHOLDER|$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" k8s/deployment.yaml | kubectl apply -f -

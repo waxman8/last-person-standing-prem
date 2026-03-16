@@ -3,10 +3,10 @@ kind: Service
 metadata:
   name: last-person-standing-service
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: last-person-standing
   ports:
     - protocol: TCP
-      port: 80
+      port: 8000
       targetPort: 8000

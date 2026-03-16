@@ -53,9 +53,9 @@ This plan outlines the steps to implement a celebratory UI when a single winner 
   ```
 
 ## 3. Implementation Steps (TODO)
-1. [ ] Add `canvas-confetti` script to `standings.html`.
-2. [ ] Implement `winner` computed property and `activeCount` watcher.
-3. [ ] Create celebratory CSS for balloons and overlay.
-4. [ ] Test celebration logic by mocking a 1-player-active state.
-5. [ ] Update K8s manifests for AWS environment.
-6. [ ] Deploy to EKS.
+1. [x] Add `canvas-confetti` script to `standings.html`.
+2. [x] Implement `winner` computed property and `activeCount` watcher.
+3. [x] Create celebratory CSS for balloons and overlay.
+4. [x] Test celebration logic by mocking a 1-player-active state.
+5. [x] Update K8s manifests for AWS environment.
+6. [x] Deploy to EKS.
