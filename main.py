@@ -130,14 +130,20 @@ async def user_re_entry(user_id: int, admin: User = Depends(get_admin_user), ses
         raise HTTPException(status_code=404, detail="User not found")
     
     current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
-    if not current_gw or not current_gw.re_entry_allowed:
-        raise HTTPException(status_code=400, detail="Re-entry not allowed in the current gameweek")
+    if not current_gw or (not current_gw.re_entry_allowed and not current_gw.is_rollover):
+        raise HTTPException(status_code=400, detail="Re-entry or Rollover activation not allowed in the current gameweek")
     
     if user.is_active:
         raise HTTPException(status_code=400, detail="User is already active")
     
     user.is_active = True
-    user.number_of_re_entries += 1
+    # If it's a rollover week, increment rollover re-entries
+    if current_gw.is_rollover:
+        user.number_of_rollover_re_entries += 1
+    # If it's a standard re-entry week, increment standard re-entries
+    elif current_gw.re_entry_allowed:
+        user.number_of_re_entries += 1
+        
     session.add(user)
     session.commit()
     session.refresh(user)
@@ -208,11 +214,36 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
     if next_gw:
         gw.is_current = False
         next_gw.is_current = True
+        
+        # Calculate the correct deadline for the new week (skip out-of-turn games)
+        unplayed = [f for f in next_gw.fixtures if f.status not in ['FINISHED', 'POSTPONED', 'CANCELLED']]
+        if unplayed:
+            next_gw.deadline = min(f.kickoff_time for f in unplayed)
+            
         session.add(next_gw)
+
+    # Check for rollover condition: if everyone is out, flag it for the admin
+    remaining_active = session.exec(select(User).where(and_(User.is_active == True, User.is_admin == False))).all()
+    rollover_needed = len(remaining_active) == 0
 
     session.commit()
     
-    return {"message": f"Gameweek {gw_id} processed successfully. Rolled over to GW {gw_id + 1 if next_gw else gw_id}."}
+    return {
+        "message": f"Gameweek {gw_id} processed successfully. Rolled over to GW {gw_id + 1 if next_gw else gw_id}.",
+        "rollover_needed": rollover_needed
+    }
+
+@app.post("/admin/gameweeks/{gw_id}/trigger-rollover")
+async def trigger_rollover(gw_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    gw = session.get(Gameweek, gw_id)
+    if not gw:
+        raise HTTPException(status_code=404, detail="Gameweek not found")
+    
+    gw.is_rollover = True
+    session.add(gw)
+    
+    session.commit()
+    return {"message": f"Rollover triggered for Gameweek {gw_id}. Please manually re-activate players who have bought back in."}
 
 @app.get("/admin/gameweeks")
 async def get_gameweeks(admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
@@ -247,12 +278,27 @@ async def batch_update_admin_picks(gw_id: int, picks_in: List[dict], admin: User
         valid_teams.add(f.home_team)
         valid_teams.add(f.away_team)
 
+    # Map team names to their fixtures
+    team_fixtures = {}
+    for f in fixtures:
+        team_fixtures[f.home_team] = f
+        team_fixtures[f.away_team] = f
+
     for p in picks_in:
         user_id = p.get('user_id')
         team_name = p.get('team_name')
         
-        if team_name and team_name not in valid_teams:
-            continue # Or raise error, but skipping invalid teams in batch is safer
+        if team_name:
+            fixture = team_fixtures.get(team_name)
+            if not fixture:
+                continue # Invalid team
+            
+            # For admin, we might want to allow it, but the request says 
+            # "we need to not allow players to select teams of matches that were already played"
+            # Since admin is doing this FOR players, usually it's better to enforce it unless there's an override.
+            # But the user specifically said "ensure that teams match for that specific week has not yet concluded"
+            if datetime.utcnow() > fixture.kickoff_time:
+                continue # Match already started, don't update/create pick for this user in batch
         
         existing_pick = session.exec(select(Pick).where(and_(Pick.user_id == user_id, Pick.gameweek_id == gw_id))).first()
         
@@ -287,7 +333,8 @@ async def get_current_fixtures(session: Session = Depends(get_session)):
         "status": f.status,
         "gameweek": {
             "id": current_gw.id,
-            "deadline": current_gw.deadline
+            "deadline": current_gw.deadline,
+            "is_rollover": current_gw.is_rollover
         }
     } for f in fixtures]
 
@@ -303,34 +350,47 @@ async def make_pick(team_name: str, current_user: User = Depends(get_current_use
     if datetime.utcnow() > current_gw.deadline:
         raise HTTPException(status_code=400, detail="Deadline passed")
     
+    # Rollover logic: only check picks after the most recent rollover gameweek
+    latest_rollover_gw = session.exec(
+        select(Gameweek)
+        .where(Gameweek.is_rollover == True)
+        .order_by(Gameweek.id.desc())
+    ).first()
+    
+    rollover_threshold_id = latest_rollover_gw.id if latest_rollover_gw else 0
+
     # Check if team already used
     if current_user.number_of_re_entries > 0:
         # Re-entry: ignore the pick from the first week (Week 24)
+        # AND only consider picks after the latest rollover
         prev_pick = session.exec(select(Pick).where(and_(
             Pick.user_id == current_user.id,
             Pick.team_name == team_name,
-            Pick.gameweek_id != FIRST_GW_ID
+            Pick.gameweek_id != FIRST_GW_ID,
+            Pick.gameweek_id >= rollover_threshold_id
         ))).first()
     else:
-        # Standard: team must not have been picked before
+        # Standard: team must not have been picked before since the last rollover
         prev_pick = session.exec(select(Pick).where(and_(
             Pick.user_id == current_user.id,
-            Pick.team_name == team_name
+            Pick.team_name == team_name,
+            Pick.gameweek_id >= rollover_threshold_id
         ))).first()
 
     if prev_pick:
-        raise HTTPException(status_code=400, detail="Team already used")
+        raise HTTPException(status_code=400, detail="Team already used since last rollover")
     
-    # Upsert pick
-    # Check if team is in current fixtures
-    fixtures = session.exec(select(Fixture).where(Fixture.gameweek_id == current_gw.id)).all()
-    valid_teams = set()
-    for f in fixtures:
-        valid_teams.add(f.home_team)
-        valid_teams.add(f.away_team)
+    # Check if the team's match for this gameweek has already started/concluded
+    fixture = session.exec(select(Fixture).where(and_(
+        Fixture.gameweek_id == current_gw.id,
+        (Fixture.home_team == team_name) | (Fixture.away_team == team_name)
+    ))).first()
     
-    if team_name not in valid_teams:
+    if not fixture:
         raise HTTPException(status_code=400, detail="Invalid team selection")
+    
+    if datetime.utcnow() > fixture.kickoff_time:
+        raise HTTPException(status_code=400, detail=f"Match for {team_name} has already started")
 
     # Upsert pick
     existing_pick = session.exec(select(Pick).where(and_(Pick.user_id == current_user.id, Pick.gameweek_id == current_gw.id))).first()
@@ -358,6 +418,7 @@ async def get_public_standings(session: Session = Depends(get_session)):
     current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
     
     total_re_entries = sum(u.number_of_re_entries for u in users)
+    total_rollover_re_entries = sum(u.number_of_rollover_re_entries for u in users)
     
     results = []
     for u in users:
@@ -372,12 +433,14 @@ async def get_public_standings(session: Session = Depends(get_session)):
             "name": u.name,
             "is_active": u.is_active,
             "current_pick": pick,
-            "re_entries": u.number_of_re_entries
+            "re_entries": u.number_of_re_entries,
+            "rollover_re_entries": u.number_of_rollover_re_entries
         })
     return {
         "gw_id": current_gw.id if current_gw else None,
         "standings": results,
-        "total_re_entries": total_re_entries
+        "total_re_entries": total_re_entries,
+        "total_rollover_re_entries": total_rollover_re_entries
     }
 
 @app.get("/standings")

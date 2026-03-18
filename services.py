@@ -25,8 +25,11 @@ def sync_fixtures_logic(session):
             gw = Gameweek(id=gw_id, deadline=kickoff, is_current=is_curr)
             session.add(gw)
         else:
-            if kickoff < gw.deadline:
-                gw.deadline = kickoff
+            # ONLY update deadline for future weeks. Current and processed weeks are locked.
+            # Also skip matches that have already been played out of turn.
+            if not gw.is_current and not gw.is_processed and m['status'] not in ['FINISHED', 'POSTPONED', 'CANCELLED']:
+                if kickoff < gw.deadline:
+                    gw.deadline = kickoff
             # Only update is_current if no gameweek is currently set as current
             if not existing_current_gw:
                 gw.is_current = (gw_id == current_gw_num)

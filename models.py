@@ -9,6 +9,7 @@ class User(SQLModel, table=True):
     is_active: bool = Field(default=True)
     is_admin: bool = Field(default=False)
     number_of_re_entries: int = Field(default=0)
+    number_of_rollover_re_entries: int = Field(default=0)
 
     picks: List["Pick"] = Relationship(back_populates="user")
 
@@ -18,6 +19,7 @@ class Gameweek(SQLModel, table=True):
     is_current: bool = Field(default=False)
     is_processed: bool = Field(default=False)
     re_entry_allowed: bool = Field(default=False)
+    is_rollover: bool = Field(default=False)
 
     fixtures: List["Fixture"] = Relationship(back_populates="gameweek")
     picks: List["Pick"] = Relationship(back_populates="gameweek")

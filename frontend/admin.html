@@ -42,11 +42,11 @@
                             <span :class="u.is_active ? 'text-green-600' : 'text-red-600'" class="text-xs font-bold uppercase tracking-wider">
                                 {{ u.is_active ? 'Active' : 'Out' }}
                             </span>
-                            <!-- Re-entry Button -->
-                            <button v-if="!u.is_admin && !u.is_active && currentGW && currentGW.re_entry_allowed"
+                            <!-- Re-entry / Rollover Activation Button -->
+                            <button v-if="!u.is_admin && !u.is_active && currentGW && (currentGW.re_entry_allowed || currentGW.is_rollover)"
                                     @click="reEntryUser(u)"
                                     class="text-purple-400 hover:text-purple-600 transition p-1"
-                                    title="Re-entry (Rise from the grave)">
+                                    :title="currentGW.is_rollover ? 'Activate for Rollover' : 'Re-entry (Rise from the grave)'">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h16" />
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 20v-7a6 6 0 1112 0v7" />
@@ -124,6 +124,13 @@
                                     title="Finalize week and move to next">
                                 Finalize & Rollover
                             </button>
+                            
+                            <button v-if="selectedGW.is_current && !selectedGW.is_rollover" @click="triggerRollover(selectedGW.id)" :disabled="processing"
+                                    class="bg-purple-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-purple-700 disabled:opacity-50 shadow-sm ml-2"
+                                    title="Trigger manual rollover for this week">
+                                Trigger Rollover
+                            </button>
+                            <span v-if="selectedGW.is_rollover" class="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-bold ml-2">ROLLOVER</span>
                         </div>
                     </div>
                     
@@ -487,6 +494,29 @@
                     this.processing = true;
                     try {
                         const res = await fetch(`/admin/apply-results/${gwId}`, { 
+                            method: 'POST', 
+                            headers: { 'Authorization': `Bearer ${this.token}` } 
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                            if (data.rollover_needed) {
+                                alert(data.message + "\n\n⚠️ EVERYONE IS OUT! You should trigger a Rollover for the next week.");
+                            } else {
+                                alert(data.message);
+                            }
+                            window.location.reload();
+                        } else {
+                            alert("Error: " + data.detail);
+                        }
+                    } finally {
+                        this.processing = false;
+                    }
+                },
+                async triggerRollover(gwId) {
+                    if (!confirm(`Are you sure you want to trigger a Rollover for Gameweek ${gwId}? This will re-activate all players and allow team reuse from this point forward.`)) return;
+                    this.processing = true;
+                    try {
+                        const res = await fetch(`/admin/gameweeks/${gwId}/trigger-rollover`, { 
                             method: 'POST', 
                             headers: { 'Authorization': `Bearer ${this.token}` } 
                         });

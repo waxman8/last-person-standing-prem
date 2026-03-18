@@ -39,7 +39,10 @@
             <!-- Your Pick / Make Pick Panel -->
             <div v-if="user.is_active" class="mb-8">
                 <!-- Already have a pick -->
-                <div v-if="myCurrentPick" class="bg-gradient-to-r from-blue-600 to-indigo-700 p-8 rounded-2xl shadow-xl text-white">
+                <div v-if="myCurrentPick" class="bg-gradient-to-r from-blue-600 to-indigo-700 p-8 rounded-2xl shadow-xl text-white relative overflow-hidden">
+                    <div v-if="fixtures.length > 0 && fixtures[0].gameweek.is_rollover" class="absolute top-0 right-0 bg-purple-500 text-white text-[10px] font-black px-3 py-1 uppercase tracking-tighter transform rotate-12 translate-x-4 translate-y-2 shadow-sm">
+                        Rollover Week
+                    </div>
                     <h3 class="text-lg font-bold opacity-80 uppercase tracking-widest mb-4">Your pick for this week</h3>
                     <div class="flex items-center justify-between">
                         <div class="flex items-center">
@@ -58,8 +61,11 @@
                 </div>
 
                 <!-- Show form if no pick OR if user wants to change -->
-                <div v-if="!myCurrentPick || showPickForm" class="bg-white p-6 rounded-lg shadow-md mt-4 transition-all duration-300">
-                    <h3 class="text-xl font-bold mb-4">Make Your Pick</h3>
+                <div v-if="!myCurrentPick || showPickForm" class="bg-white p-6 rounded-lg shadow-md mt-4 transition-all duration-300 border-t-4" :class="fixtures.length > 0 && fixtures[0].gameweek.is_rollover ? 'border-purple-500' : 'border-blue-600'">
+                    <div class="flex justify-between items-start mb-4">
+                        <h3 class="text-xl font-bold">Make Your Pick</h3>
+                        <span v-if="fixtures.length > 0 && fixtures[0].gameweek.is_rollover" class="bg-purple-100 text-purple-800 text-[10px] px-2 py-1 rounded-full font-black uppercase tracking-widest">Rollover Active</span>
+                    </div>
                     <div v-if="fixtures.length > 0">
                         <p class="text-sm text-gray-500 mb-4">Select one team to win this week. Deadline: {{ formatDate(fixtures[0].gameweek.deadline) }}</p>
                         <select v-model="selectedTeam" class="w-full border p-3 rounded mb-4">
