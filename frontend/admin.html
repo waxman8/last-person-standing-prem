@@ -118,6 +118,7 @@
                                 
                                 <span v-if="selectedGW && selectedGW.is_processed" class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold ml-2">PROCESSED</span>
                                 <span v-else-if="selectedGW" class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-bold ml-2">OPEN</span>
+                                <span v-if="selectedGW && selectedGW.is_rollover" class="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-bold ml-2">ROLLOVER</span>
                             </div>
                         </div>
                         <div v-if="selectedGW && selectedGW.is_current && (!selectedGW.is_processed || !selectedGW.is_rollover)" class="flex flex-col sm:flex-row items-center sm:space-x-4 space-y-2 sm:space-y-0 w-full sm:w-auto">
@@ -127,12 +128,11 @@
                                 Finalise Week
                             </button>
                             
-                            <button v-if="!selectedGW.is_rollover" @click="triggerRollover(selectedGW.id)" :disabled="processing"
+                            <button v-if="!selectedGW.is_rollover && activeUsersCount === 0" @click="triggerRollover(selectedGW.id)" :disabled="processing"
                                     class="bg-purple-600 text-white px-3 py-2 sm:py-1 rounded text-xs font-bold hover:bg-purple-700 disabled:opacity-50 shadow-sm w-full sm:w-auto"
                                     title="Trigger manual rollover for this week">
                                 Trigger Rollover
                             </button>
-                            <span v-if="selectedGW.is_rollover" class="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-bold w-full sm:w-auto text-center">ROLLOVER</span>
                         </div>
                     </div>
                     
@@ -329,6 +329,9 @@
                 },
                 sortedUserPicks() {
                     return [...this.userPicks].sort((a, b) => a.user_name.localeCompare(b.user_name));
+                },
+                activeUsersCount() {
+                    return this.users.filter(u => u.is_active && !u.is_admin).length;
                 }
             },
             methods: {
