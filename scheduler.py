@@ -38,8 +38,7 @@ async def fixture_scheduler_worker():
                 # "On" means it has started, it's within the 150-min window, and it's not finished/postponed/cancelled
                 match_on = session.exec(
                     select(Fixture).where(
-                        Fixture.kickoff_time <= now,
-                        Fixture.kickoff_time + timedelta(minutes=150) > now,
+                        Fixture.kickoff_time.between(now - timedelta(minutes=150), now),
                         Fixture.status.not_in(["FINISHED", "POSTPONED", "CANCELLED"])
                     )
                 ).first() is not None
