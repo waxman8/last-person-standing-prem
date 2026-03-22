@@ -5,7 +5,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from jose import JWTError, jwt
 from sqlmodel import select, and_
@@ -49,7 +49,7 @@ async def on_startup():
 # --- Auth Helpers ---
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -297,7 +297,7 @@ async def batch_update_admin_picks(gw_id: int, picks_in: List[dict], admin: User
             # "we need to not allow players to select teams of matches that were already played"
             # Since admin is doing this FOR players, usually it's better to enforce it unless there's an override.
             # But the user specifically said "ensure that teams match for that specific week has not yet concluded"
-            if datetime.utcnow() > fixture.kickoff_time:
+            if datetime.now(timezone.utc).replace(tzinfo=None) > fixture.kickoff_time:
                 continue # Match already started, don't update/create pick for this user in batch
         
         existing_pick = session.exec(select(Pick).where(and_(Pick.user_id == user_id, Pick.gameweek_id == gw_id))).first()
@@ -309,7 +309,7 @@ async def batch_update_admin_picks(gw_id: int, picks_in: List[dict], admin: User
             if existing_pick:
                 if existing_pick.team_name != team_name:
                     existing_pick.team_name = team_name
-                    existing_pick.timestamp = datetime.utcnow()
+                    existing_pick.timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
             else:
                 new_pick = Pick(user_id=user_id, gameweek_id=gw_id, team_name=team_name)
                 session.add(new_pick)
@@ -347,7 +347,7 @@ async def make_pick(team_name: str, current_user: User = Depends(get_current_use
     if not current_gw:
         raise HTTPException(status_code=400, detail="No active gameweek")
     
-    if datetime.utcnow() > current_gw.deadline:
+    if datetime.now(timezone.utc).replace(tzinfo=None) > current_gw.deadline:
         raise HTTPException(status_code=400, detail="Deadline passed")
     
     # Rollover logic: only check picks after the most recent rollover gameweek
@@ -389,14 +389,14 @@ async def make_pick(team_name: str, current_user: User = Depends(get_current_use
     if not fixture:
         raise HTTPException(status_code=400, detail="Invalid team selection")
     
-    if datetime.utcnow() > fixture.kickoff_time:
+    if datetime.now(timezone.utc).replace(tzinfo=None) > fixture.kickoff_time:
         raise HTTPException(status_code=400, detail=f"Match for {team_name} has already started")
 
     # Upsert pick
     existing_pick = session.exec(select(Pick).where(and_(Pick.user_id == current_user.id, Pick.gameweek_id == current_gw.id))).first()
     if existing_pick:
         existing_pick.team_name = team_name
-        existing_pick.timestamp = datetime.utcnow()
+        existing_pick.timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
     else:
         new_pick = Pick(user_id=current_user.id, gameweek_id=current_gw.id, team_name=team_name)
         session.add(new_pick)

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -42,7 +42,7 @@ class Pick(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id")
     gameweek_id: int = Field(foreign_key="gameweek.id")
     team_name: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     user: User = Relationship(back_populates="picks")
     gameweek: Gameweek = Relationship(back_populates="picks")
