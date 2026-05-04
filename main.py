@@ -419,6 +419,7 @@ async def get_public_standings(session: Session = Depends(get_session)):
     
     total_re_entries = sum(u.number_of_re_entries for u in users)
     total_rollover_re_entries = sum(u.number_of_rollover_re_entries for u in users)
+    prize_pot = (len(users) + total_re_entries + total_rollover_re_entries) * 5
     
     results = []
     for u in users:
@@ -440,7 +441,8 @@ async def get_public_standings(session: Session = Depends(get_session)):
         "gw_id": current_gw.id if current_gw else None,
         "standings": results,
         "total_re_entries": total_re_entries,
-        "total_rollover_re_entries": total_rollover_re_entries
+        "total_rollover_re_entries": total_rollover_re_entries,
+        "prize_pot": prize_pot
     }
 
 @app.get("/standings")
