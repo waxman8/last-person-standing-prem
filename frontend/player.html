@@ -260,7 +260,7 @@
                 },
                 async loadInitial() {
                     const headers = { 'Authorization': `Bearer ${this.token}` };
-                    const compRes = await fetch('/admin/competitions', { headers });
+                    const compRes = await fetch('/public/competitions', { headers });
                     this.competitions = await compRes.json();
                     if (this.competitions.length > 0) {
                         // Default to WC if available, else PL
