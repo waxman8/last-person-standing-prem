@@ -51,9 +51,14 @@
                     </h2>
                     <div class="space-y-4 mb-6 max-h-96 overflow-y-auto">
                         <div v-for="u in users" :key="u.id" class="flex justify-between items-center border-b pb-2 group">
-                            <div class="flex flex-col">
-                                <span class="font-medium">{{ u.name }}</span>
-                                <span class="text-[10px] text-gray-500">PIN: {{ u.pin }}</span>
+                            <div class="flex items-center">
+                                <div v-if="getPlayerStatus(u.id).current_pick" class="w-6 h-6 flex items-center justify-center bg-gray-50 rounded border border-gray-100 shadow-sm overflow-hidden mr-2">
+                                    <img :src="getLogoUrl(getPlayerStatus(u.id).current_pick)" class="w-4 h-4 object-contain" @error="handleLogoError">
+                                </div>
+                                <div class="flex flex-col">
+                                    <span class="font-medium">{{ u.name }}</span>
+                                    <span class="text-[10px] text-gray-500">PIN: {{ u.pin }}</span>
+                                </div>
                             </div>
                             <div class="flex items-center space-x-3">
                                 <span :class="getPlayerStatus(u.id).is_active ? 'text-green-600' : 'text-red-600'" class="text-xs font-bold uppercase tracking-wider">
@@ -134,15 +139,25 @@
                             <table class="w-full text-sm">
                                 <tbody class="divide-y">
                                     <tr v-for="f in fixtures" :key="f.id" class="hover:bg-gray-50">
-                                        <td class="py-3">
+                                        <td class="py-3 px-2">
                                             <div class="flex justify-between items-center">
-                                                <span class="w-1/3 text-right">{{ f.home_team }}</span>
-                                                <span class="w-1/3 text-center font-bold">{{ f.home_score ?? '-' }} : {{ f.away_score ?? '-' }}</span>
-                                                <span class="w-1/3 text-left">{{ f.away_team }}</span>
+                                                <div class="w-1/3 flex items-center justify-end">
+                                                    <span class="truncate mr-2">{{ f.home_team }}</span>
+                                                    <div class="w-6 h-6 flex items-center justify-center bg-white rounded border border-gray-100 shadow-sm overflow-hidden">
+                                                        <img :src="getLogoUrl(f.home_team)" class="w-5 h-5 object-contain" @error="handleLogoError">
+                                                    </div>
+                                                </div>
+                                                <span class="w-1/4 text-center font-bold">{{ f.home_score ?? '-' }} : {{ f.away_score ?? '-' }}</span>
+                                                <div class="w-1/3 flex items-center">
+                                                    <div class="w-6 h-6 flex items-center justify-center bg-white rounded border border-gray-100 shadow-sm overflow-hidden mr-2">
+                                                        <img :src="getLogoUrl(f.away_team)" class="w-5 h-5 object-contain" @error="handleLogoError">
+                                                    </div>
+                                                    <span class="truncate">{{ f.away_team }}</span>
+                                                </div>
                                             </div>
-                                            <div class="text-[10px] text-gray-400 text-center">{{ formatDate(f.kickoff_time) }} - {{ f.stage }}</div>
+                                            <div class="text-[10px] text-gray-400 text-center mt-1">{{ formatDate(f.kickoff_time) }} - {{ f.stage }}</div>
                                         </td>
-                                        <td class="text-right">
+                                        <td class="text-right pr-2">
                                             <span class="text-blue-600 font-bold">{{ f.winner ?? '' }}</span>
                                         </td>
                                     </tr>
@@ -172,7 +187,28 @@
                     syncing: false,
                     processing: false,
                     error: '',
-                    newUser: { name: '', pin: '' }
+                    newUser: { name: '', pin: '' },
+                    teamBadges: {
+                        "Arsenal FC": 57, "Aston Villa FC": 58, "AFC Bournemouth": 1044, "Brentford FC": 402,
+                        "Brighton & Hove Albion FC": 397, "Chelsea FC": 61, "Crystal Palace FC": 354, "Everton FC": 62,
+                        "Fulham FC": 63, "Ipswich Town FC": 349, "Leicester City FC": 338, "Liverpool FC": 64,
+                        "Manchester City FC": 65, "Manchester United FC": 66, "Newcastle United FC": 67, "Nottingham Forest FC": 351,
+                        "Southampton FC": 340, "Tottenham Hotspur FC": 73, "West Ham United FC": 563, "Wolverhampton Wanderers FC": 76,
+                        // World Cup Teams
+                        "Argentina": 762, "Australia": 779, "Austria": 827, "Belgium": 805, "Brazil": 764, "Canada": 765, 
+                        "Colombia": 818, "Croatia": 799, "Denmark": 782, "Ecuador": 825, "Egypt": 824, "England": 770, 
+                        "France": 773, "Germany": 759, "Ghana": 831, "Iran": 833, "Italy": 784, "Japan": 776, 
+                        "Mexico": 769, "Morocco": 834, "Netherlands": 671, "Norway": 789, "Portugal": 787, "Saudi Arabia": 801, 
+                        "Senegal": 828, "South Korea": 772, "Spain": 760, "Switzerland": 788, "Tunisia": 829, "Uruguay": 758, 
+                        "USA": 768, "United States": 768, "United States of America": 768, "Wales": 767, "Qatar": 832, "Scotland": 830, "Sweden": 794,
+                        "Turkey": 803, "Poland": 791, "Serbia": 785, "Ukraine": 790, "Peru": 835, "Chile": 813,
+                        "Paraguay": 836, "Algeria": 837, "Ivory Coast": 838, "Nigeria": 839, "Cameroon": 840,
+                        "South Africa": 841, "New Zealand": 842, "Panama": 843, "Costa Rica": 844, "Jamaica": 845,
+                        "Haiti": 846, "Curaçao": 847, "Curacao": 847, "Jordan": 848, "Iraq": 849, "Uzbekistan": 850, "Cape Verde Islands": 851,
+                        "Congo DR": 852, "Bosnia-Herzegovina": 853, "Bosnia and Herzegovina": 853, "Czechia": 798,
+                        // Fix for possible "Congo DR" mapping issue if data-org uses different ID
+                        "Congo DR": 852
+                    }
                 }
             },
             async mounted() {
@@ -188,6 +224,41 @@
                 currentGW() { return this.gameweeks.find(g => g.is_current); }
             },
             methods: {
+                getLogoUrl(teamName) {
+                    const fallback = 'https://crests.football-data.org/77.svg';
+                    if (!teamName) return fallback;
+                    
+                    let id = this.teamBadges[teamName];
+                    if (!id) {
+                        const cleanT = teamName.replace(/\s+(FC|AFC|City|United)$/i, '').toLowerCase();
+                        const entry = Object.entries(this.teamBadges).find(([name]) => {
+                            const cleanK = name.replace(/\s+(FC|AFC|City|United)$/i, '').toLowerCase();
+                            return cleanK === cleanT || cleanT.includes(cleanK) || cleanK.includes(cleanT);
+                        });
+                        if (entry) id = entry[1];
+                    }
+                    
+                    if (id) {
+                        const url = `https://crests.football-data.org/${id}.svg`;
+                        // DEBUG
+                        if (!window.loggedLogos) window.loggedLogos = new Set();
+                        if (!window.loggedLogos.has(url)) {
+                            console.log(`[ADMIN] Loading logo for "${teamName}": ${url}`);
+                            window.loggedLogos.add(url);
+                        }
+                        return url;
+                    }
+                    return fallback;
+                },
+                handleLogoError(event) {
+                    const fallback = 'https://crests.football-data.org/77.svg';
+                    const src = event.target.src;
+                    if (src.endsWith('.svg')) {
+                        event.target.src = src.replace('.svg', '.png');
+                    } else if (src !== fallback) {
+                        event.target.src = fallback;
+                    }
+                },
                 async logout() {
                     localStorage.removeItem('token_admin');
                     this.token = null;

@@ -195,7 +195,23 @@
                         "Brighton & Hove Albion FC": 397, "Chelsea FC": 61, "Crystal Palace FC": 354, "Everton FC": 62,
                         "Fulham FC": 63, "Ipswich Town FC": 349, "Leicester City FC": 338, "Liverpool FC": 64,
                         "Manchester City FC": 65, "Manchester United FC": 66, "Newcastle United FC": 67, "Nottingham Forest FC": 351,
-                        "Southampton FC": 340, "Tottenham Hotspur FC": 73, "West Ham United FC": 563, "Wolverhampton Wanderers FC": 76
+                        "Southampton FC": 340, "Tottenham Hotspur FC": 73, "West Ham United FC": 563, "Wolverhampton Wanderers FC": 76,
+                        // World Cup Teams
+                        "Argentina": 762, "Australia": 779, "Austria": 827, "Belgium": 805, "Brazil": 764, "Canada": 765, 
+                        "Colombia": 818, "Croatia": 799, "Denmark": 782, "Ecuador": 825, "Egypt": 824, "England": 770, 
+                        "France": 773, "Germany": 759, "Ghana": 831, "Iran": 833, "Italy": 784, "Japan": 776, 
+                        "Mexico": 769, "Morocco": 834, "Netherlands": 671, "Norway": 789, "Portugal": 787, "Saudi Arabia": 801, 
+                        "Senegal": 828, "South Korea": 772, "Spain": 760, "Switzerland": 788, "Tunisia": 829, "Uruguay": 758, 
+                        "USA": 768, "United States": 768, "Wales": 767, "Qatar": 832, "Scotland": 830, "Sweden": 794,
+                        "Turkey": 803, "Poland": 791, "Serbia": 785, "Ukraine": 790, "Peru": 835, "Chile": 813,
+                        "Paraguay": 836, "Algeria": 837, "Ivory Coast": 838, "Nigeria": 839, "Cameroon": 840,
+                        "South Africa": 841, "New Zealand": 842, "Panama": 843, "Costa Rica": 844, "Jamaica": 845,
+                        "Haiti": 846, "Curaçao": 847, "Jordan": 848, "Iraq": 849, "Uzbekistan": 850, "Cape Verde Islands": 851,
+                        "Congo DR": 852, "Bosnia-Herzegovina": 853, "Czechia": 798,
+                        "USA": 768, "United States": 768, "United States of America": 768,
+                        "Korea Republic": 772, "South Korea": 772,
+                        "Curaçao": 847, "Curacao": 847,
+                        "Bosnia and Herzegovina": 853, "Bosnia-Herzegovina": 853
                     }
                 }
             },
@@ -295,14 +311,19 @@
                     
                     let id = this.teamBadges[teamName];
                     if (!id) {
-                         // Search by substring
-                         const key = Object.keys(this.teamBadges).find(k => teamName.includes(k.replace(' FC', '')));
+                         // Search by substring (handles 'England' vs 'England FC' etc)
+                         const key = Object.keys(this.teamBadges).find(k => {
+                             const cleanK = k.replace(/\s+(FC|AFC|City|United)$/i, '').toLowerCase();
+                             const cleanT = teamName.replace(/\s+(FC|AFC|City|United)$/i, '').toLowerCase();
+                             return cleanK === cleanT || cleanT.includes(cleanK);
+                         });
                          if (key) id = this.teamBadges[key];
                     }
                     
                     if (id) return `https://crests.football-data.org/${id}.svg`;
                     
-                    // Fallback for WC teams - we don't have IDs yet but football-data uses name-based crests or we can guess
+                    // Direct name-based fallback if ID missing (often works for national teams on some CDNs)
+                    // but we'll stick to our ID map for reliability.
                     return fallback;
                 },
                 handleLogoError(event) {
