@@ -8,10 +8,10 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from jose import JWTError, jwt
-from sqlmodel import select, and_
+from sqlmodel import select, and_, desc
 
 from database import init_db, get_session
-from models import User, Gameweek, Fixture, Pick
+from models import User, Gameweek, Fixture, Pick, Competition, UserCompetitionStatus
 import api_client
 from services import sync_fixtures_logic
 from scheduler import fixture_scheduler_worker
@@ -41,7 +41,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 async def on_startup():
     init_db()
     # Start the fixture scheduler in the background
-    # Log the date and time manually for the scheduler start as requested
     now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
     logger.info(f"{now} - scheduler - Fixture scheduler worker started")
     asyncio.create_task(fixture_scheduler_worker())
@@ -81,7 +80,6 @@ async def get_admin_user(current_user: User = Depends(get_current_user)):
 
 @app.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
-    # In this app, username is ignored, password is the PIN
     user = session.exec(select(User).where(User.pin == form_data.password)).first()
     if not user:
         raise HTTPException(status_code=400, detail="Invalid PIN")
@@ -100,6 +98,14 @@ async def create_user(user_in: User, admin: User = Depends(get_admin_user), sess
     session.add(user_in)
     session.commit()
     session.refresh(user_in)
+    
+    # Initialize competition status for all active competitions
+    comps = session.exec(select(Competition).where(Competition.is_active == True)).all()
+    for c in comps:
+        status = UserCompetitionStatus(user_id=user_in.id, competition_id=c.id, is_active=True, paid=False)
+        session.add(status)
+    session.commit()
+    
     return user_in
 
 @app.get("/admin/users", response_model=List[User])
@@ -114,216 +120,143 @@ async def delete_user(user_id: int, admin: User = Depends(get_admin_user), sessi
     if user.is_admin:
         raise HTTPException(status_code=400, detail="Cannot delete admin user")
     
-    # Delete user's picks first
+    # Delete user's picks and statuses first
     picks = session.exec(select(Pick).where(Pick.user_id == user_id)).all()
-    for pick in picks:
-        session.delete(pick)
+    for pick in picks: session.delete(pick)
+    
+    statuses = session.exec(select(UserCompetitionStatus).where(UserCompetitionStatus.user_id == user_id)).all()
+    for s in statuses: session.delete(s)
     
     session.delete(user)
     session.commit()
     return {"message": "User deleted successfully"}
 
 @app.post("/admin/users/{user_id}/re-entry")
-async def user_re_entry(user_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
-    user = session.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+async def user_re_entry(user_id: int, competition_id: int = 1, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    status = session.exec(
+        select(UserCompetitionStatus).where(
+            and_(UserCompetitionStatus.user_id == user_id, UserCompetitionStatus.competition_id == competition_id)
+        )
+    ).first()
     
-    current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
-    if not current_gw or (not current_gw.re_entry_allowed and not current_gw.is_rollover):
-        raise HTTPException(status_code=400, detail="Re-entry or Rollover activation not allowed in the current gameweek")
+    if not status:
+        raise HTTPException(status_code=404, detail="User status for this competition not found")
     
-    if user.is_active:
+    current_gw = session.exec(
+        select(Gameweek).where(and_(Gameweek.competition_id == competition_id, Gameweek.is_current == True))
+    ).first()
+    
+    if not current_gw or (not current_gw.re_entry_allowed and not current_gw.is_rollover and not status.eligible_for_rebuy):
+        raise HTTPException(status_code=400, detail="Re-entry or Rollover activation not allowed in the current stage")
+    
+    if status.is_active:
         raise HTTPException(status_code=400, detail="User is already active")
     
-    user.is_active = True
-    # If it's a rollover week, increment rollover re-entries
+    status.is_active = True
+    status.eligible_for_rebuy = False
+    
     if current_gw.is_rollover:
-        user.number_of_rollover_re_entries += 1
-    # If it's a standard re-entry week, increment standard re-entries
-    elif current_gw.re_entry_allowed:
-        user.number_of_re_entries += 1
+        status.number_of_rollovers += 1
+    else:
+        status.number_of_re_entries += 1
         
-    session.add(user)
+    status.paid = True
+    session.add(status)
     session.commit()
-    session.refresh(user)
-    return user
+    session.refresh(status)
+    return status
+
+@app.post("/admin/gameweeks/{gw_id}/trigger-rollover")
+async def trigger_rollover(gw_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    gw = session.get(Gameweek, gw_id)
+    if not gw: raise HTTPException(status_code=404, detail="Gameweek not found")
+    gw.is_rollover = True
+    session.add(gw)
+    session.commit()
+    return {"message": f"Rollover triggered for Gameweek {gw.number}. Please manually re-activate players who have bought back in."}
 
 @app.post("/admin/sync-fixtures")
 async def sync_fixtures(admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
-    """Only fetches and updates fixtures and gameweek deadlines."""
     try:
         return sync_fixtures_logic(session)
     except Exception as e:
-        # Log the error for debugging
         logger.error(f"Sync error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/admin/apply-results/{gw_id}")
 async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
-    """Resolves results for a specific gameweek."""
     gw = session.get(Gameweek, gw_id)
-    if not gw:
-        raise HTTPException(status_code=404, detail="Gameweek not found")
-    
-    if gw.is_processed:
-        raise HTTPException(status_code=400, detail="Gameweek already processed")
+    if not gw: raise HTTPException(status_code=404, detail="Gameweek not found")
+    if gw.is_processed: raise HTTPException(status_code=400, detail="Gameweek already processed")
 
-    # Check if all fixtures are finished or postponed
+    comp = session.get(Competition, gw.competition_id)
     fixtures = session.exec(select(Fixture).where(Fixture.gameweek_id == gw.id)).all()
     all_finalized = all(f.status in ['FINISHED', 'POSTPONED', 'CANCELLED'] for f in fixtures)
     
     if not all_finalized:
-        # Finalizing & Rollover should only happen once the whole week is done
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot finalize and rollover: some fixtures are still in play or not yet started. Use 'Sync Live Results' instead."
-        )
+        raise HTTPException(status_code=400, detail="Cannot finalize: some fixtures are still in play.")
 
-    # Resolve players (this covers anyone not already eliminated live)
     picks = session.exec(select(Pick).where(Pick.gameweek_id == gw.id)).all()
     for pick in picks:
-        user = session.get(User, pick.user_id)
-        if not user or not user.is_active or user.is_admin: continue
+        status = session.exec(select(UserCompetitionStatus).where(
+            and_(UserCompetitionStatus.user_id == pick.user_id, UserCompetitionStatus.competition_id == gw.competition_id)
+        )).first()
+        if not status or not status.is_active: continue
         
-        # Find the fixture for this team
         fixture = next((f for f in fixtures if f.home_team == pick.team_name or f.away_team == pick.team_name), None)
-        
-        if not fixture:
-            continue
-        
-        if fixture.status == 'FINISHED':
-            if fixture.winner != pick.team_name:
-                user.is_active = False
-                session.add(user)
-        # Note: POSTPONED/CANCELLED are considered 'through' by default in this LMS logic
+        if fixture and fixture.status == 'FINISHED' and fixture.winner != pick.team_name:
+            status.is_active = False
+            if comp and comp.code == "WC":
+                if fixture.stage in ['GROUP_STAGE', 'ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINALS']:
+                    status.eligible_for_rebuy = True
+            session.add(status)
     
-    # Eliminate players who didn't pick
-    active_users = session.exec(select(User).where(and_(User.is_active == True, User.is_admin == False))).all()
-    for user in active_users:
-        user_pick = session.exec(select(Pick).where(and_(Pick.user_id == user.id, Pick.gameweek_id == gw.id))).first()
+    active_statuses = session.exec(select(UserCompetitionStatus).where(
+        and_(UserCompetitionStatus.competition_id == gw.competition_id, UserCompetitionStatus.is_active == True)
+    )).all()
+    
+    for s in active_statuses:
+        user = session.get(User, s.user_id)
+        if user.is_admin: continue
+        user_pick = session.exec(select(Pick).where(and_(Pick.user_id == s.user_id, Pick.gameweek_id == gw.id))).first()
         if not user_pick:
-            user.is_active = False
-            session.add(user)
+            s.is_active = False
+            if comp and comp.code == "WC":
+                 if fixtures and fixtures[0].stage in ['GROUP_STAGE', 'ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINALS']:
+                     s.eligible_for_rebuy = True
+            session.add(s)
     
     gw.is_processed = True
     session.add(gw)
 
-    # Roll over: Set next gameweek as current if it exists
-    next_gw = session.get(Gameweek, gw_id + 1)
+    next_gw = session.exec(select(Gameweek).where(
+        and_(Gameweek.competition_id == gw.competition_id, Gameweek.number == gw.number + 1)
+    )).first()
+    
     if next_gw:
         gw.is_current = False
         next_gw.is_current = True
-        
-        # Calculate the correct deadline for the new week (skip out-of-turn games)
-        unplayed = [f for f in next_gw.fixtures if f.status not in ['FINISHED', 'POSTPONED', 'CANCELLED']]
-        if unplayed:
-            next_gw.deadline = min(f.kickoff_time for f in unplayed)
-            
         session.add(next_gw)
 
-    # Check for rollover condition: if everyone is out, flag it for the admin
-    remaining_active = session.exec(select(User).where(and_(User.is_active == True, User.is_admin == False))).all()
-    rollover_needed = len(remaining_active) == 0
-
     session.commit()
-    
-    return {
-        "message": f"Gameweek {gw_id} processed successfully. Rolled over to GW {gw_id + 1 if next_gw else gw_id}.",
-        "rollover_needed": rollover_needed
-    }
+    return {"message": f"Gameweek {gw.number} processed successfully."}
 
-@app.post("/admin/gameweeks/{gw_id}/trigger-rollover")
-async def trigger_rollover(gw_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
-    gw = session.get(Gameweek, gw_id)
-    if not gw:
-        raise HTTPException(status_code=404, detail="Gameweek not found")
-    
-    gw.is_rollover = True
-    session.add(gw)
-    
-    session.commit()
-    return {"message": f"Rollover triggered for Gameweek {gw_id}. Please manually re-activate players who have bought back in."}
+@app.get("/admin/competitions")
+async def get_competitions(admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    return session.exec(select(Competition)).all()
 
 @app.get("/admin/gameweeks")
-async def get_gameweeks(admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
-    return session.exec(select(Gameweek).order_by(Gameweek.id)).all()
-
-@app.get("/admin/fixtures/{gw_id}")
-async def get_gw_fixtures(gw_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
-    return session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id).order_by(Fixture.kickoff_time)).all()
-
-@app.get("/admin/picks/{gw_id}")
-async def get_admin_picks(gw_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
-    users = session.exec(select(User).where(User.is_admin == False)).all()
-    picks = session.exec(select(Pick).where(Pick.gameweek_id == gw_id)).all()
-    picks_map = {p.user_id: p for p in picks}
-    
-    results = []
-    for u in users:
-        results.append({
-            "user_id": u.id,
-            "user_name": u.name,
-            "is_active": u.is_active,
-            "team_name": picks_map[u.id].team_name if u.id in picks_map else None
-        })
-    return results
-
-@app.post("/admin/picks/{gw_id}/batch")
-async def batch_update_admin_picks(gw_id: int, picks_in: List[dict], admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
-    # Get all fixtures for this GW to validate teams
-    fixtures = session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id)).all()
-    valid_teams = set()
-    for f in fixtures:
-        valid_teams.add(f.home_team)
-        valid_teams.add(f.away_team)
-
-    # Map team names to their fixtures
-    team_fixtures = {}
-    for f in fixtures:
-        team_fixtures[f.home_team] = f
-        team_fixtures[f.away_team] = f
-
-    for p in picks_in:
-        user_id = p.get('user_id')
-        team_name = p.get('team_name')
-        
-        if team_name:
-            fixture = team_fixtures.get(team_name)
-            if not fixture:
-                continue # Invalid team
-            
-            # For admin, we might want to allow it, but the request says 
-            # "we need to not allow players to select teams of matches that were already played"
-            # Since admin is doing this FOR players, usually it's better to enforce it unless there's an override.
-            # But the user specifically said "ensure that teams match for that specific week has not yet concluded"
-            if datetime.now(timezone.utc).replace(tzinfo=None) > fixture.kickoff_time:
-                continue # Match already started, don't update/create pick for this user in batch
-        
-        existing_pick = session.exec(select(Pick).where(and_(Pick.user_id == user_id, Pick.gameweek_id == gw_id))).first()
-        
-        if not team_name:
-            if existing_pick:
-                session.delete(existing_pick)
-        else:
-            if existing_pick:
-                if existing_pick.team_name != team_name:
-                    existing_pick.team_name = team_name
-                    existing_pick.timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
-            else:
-                new_pick = Pick(user_id=user_id, gameweek_id=gw_id, team_name=team_name)
-                session.add(new_pick)
-    
-    session.commit()
-    return {"message": "Picks updated successfully"}
+async def get_gameweeks(competition_id: int = 1, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    return session.exec(select(Gameweek).where(Gameweek.competition_id == competition_id).order_by(Gameweek.number)).all()
 
 # --- Player Routes ---
 
 @app.get("/fixtures")
-async def get_current_fixtures(session: Session = Depends(get_session)):
-    current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
-    if not current_gw:
-        return []
+async def get_current_fixtures(competition_id: int = 1, session: Session = Depends(get_session)):
+    current_gw = session.exec(select(Gameweek).where(
+        and_(Gameweek.competition_id == competition_id, Gameweek.is_current == True)
+    )).first()
+    if not current_gw: return []
     fixtures = session.exec(select(Fixture).where(Fixture.gameweek_id == current_gw.id).order_by(Fixture.kickoff_time)).all()
     return [{
         "id": f.id,
@@ -331,159 +264,143 @@ async def get_current_fixtures(session: Session = Depends(get_session)):
         "away_team": f.away_team,
         "kickoff_time": f.kickoff_time,
         "status": f.status,
-        "gameweek": {
-            "id": current_gw.id,
-            "deadline": current_gw.deadline,
-            "is_rollover": current_gw.is_rollover
-        }
+        "stage": f.stage,
+        "gameweek": { "id": current_gw.id, "number": current_gw.number, "deadline": current_gw.deadline }
     } for f in fixtures]
 
 @app.post("/picks")
-async def make_pick(team_name: str, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    if not current_user.is_active:
-        raise HTTPException(status_code=400, detail="You are eliminated")
+async def make_pick(team_name: str, competition_id: int = 1, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    status = session.exec(select(UserCompetitionStatus).where(
+        and_(UserCompetitionStatus.user_id == current_user.id, UserCompetitionStatus.competition_id == competition_id)
+    )).first()
     
-    current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
-    if not current_gw:
-        raise HTTPException(status_code=400, detail="No active gameweek")
+    if not status or not status.is_active:
+        raise HTTPException(status_code=400, detail="You are eliminated from this competition")
     
+    current_gw = session.exec(select(Gameweek).where(
+        and_(Gameweek.competition_id == competition_id, Gameweek.is_current == True)
+    )).first()
+    
+    if not current_gw: raise HTTPException(status_code=400, detail="No active stage")
     if datetime.now(timezone.utc).replace(tzinfo=None) > current_gw.deadline:
         raise HTTPException(status_code=400, detail="Deadline passed")
     
-    # Rollover logic: only check picks after the most recent rollover gameweek
-    latest_rollover_gw = session.exec(
-        select(Gameweek)
-        .where(Gameweek.is_rollover == True)
-        .order_by(Gameweek.id.desc())
-    ).first()
-    
-    rollover_threshold_id = latest_rollover_gw.id if latest_rollover_gw else 0
+    comp = session.get(Competition, competition_id)
+    sample_fix = session.exec(select(Fixture).where(Fixture.gameweek_id == current_gw.id)).first()
+    is_knockout = sample_fix and sample_fix.stage not in ['REGULAR', 'GROUP_STAGE']
 
-    # Check if team already used
-    if current_user.number_of_re_entries > 0:
-        # Re-entry: ignore the pick from the first week (Week 24)
-        # AND only consider picks after the latest rollover
+    # Determine rollover context: only check picks after the most recent rollover
+    latest_rollover = session.exec(select(Gameweek).where(
+        and_(Gameweek.competition_id == competition_id, Gameweek.is_rollover == True)
+    ).order_by(desc(Gameweek.id))).first()
+    rollover_threshold_id = latest_rollover.id if latest_rollover else 0
+
+    if not is_knockout or (comp and comp.type == 'LEAGUE'):
         prev_pick = session.exec(select(Pick).where(and_(
             Pick.user_id == current_user.id,
+            Pick.competition_id == competition_id,
             Pick.team_name == team_name,
-            Pick.gameweek_id != FIRST_GW_ID,
+            Pick.gameweek_id != current_gw.id,
             Pick.gameweek_id >= rollover_threshold_id
         ))).first()
-    else:
-        # Standard: team must not have been picked before since the last rollover
-        prev_pick = session.exec(select(Pick).where(and_(
-            Pick.user_id == current_user.id,
-            Pick.team_name == team_name,
-            Pick.gameweek_id >= rollover_threshold_id
-        ))).first()
-
-    if prev_pick:
-        raise HTTPException(status_code=400, detail="Team already used since last rollover")
+        
+        if prev_pick:
+            if comp and comp.code == "WC":
+                prev_fix = session.exec(select(Fixture).where(and_(
+                    Fixture.gameweek_id == prev_pick.gameweek_id,
+                    (Fixture.home_team == team_name) | (Fixture.away_team == team_name)
+                ))).first()
+                if prev_fix and prev_fix.stage == 'GROUP_STAGE':
+                    raise HTTPException(status_code=400, detail="Team already used in Group Stage")
+            else:
+                raise HTTPException(status_code=400, detail="Team already used since last rollover")
     
-    # Check if the team's match for this gameweek has already started/concluded
     fixture = session.exec(select(Fixture).where(and_(
         Fixture.gameweek_id == current_gw.id,
         (Fixture.home_team == team_name) | (Fixture.away_team == team_name)
     ))).first()
     
-    if not fixture:
-        raise HTTPException(status_code=400, detail="Invalid team selection")
-    
+    if not fixture: raise HTTPException(status_code=400, detail="Invalid team selection")
     if datetime.now(timezone.utc).replace(tzinfo=None) > fixture.kickoff_time:
         raise HTTPException(status_code=400, detail=f"Match for {team_name} has already started")
 
-    # Upsert pick
-    existing_pick = session.exec(select(Pick).where(and_(Pick.user_id == current_user.id, Pick.gameweek_id == current_gw.id))).first()
+    existing_pick = session.exec(select(Pick).where(and_(
+        Pick.user_id == current_user.id, Pick.gameweek_id == current_gw.id
+    ))).first()
+    
     if existing_pick:
         existing_pick.team_name = team_name
         existing_pick.timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
     else:
-        new_pick = Pick(user_id=current_user.id, gameweek_id=current_gw.id, team_name=team_name)
+        new_pick = Pick(user_id=current_user.id, gameweek_id=current_gw.id, competition_id=competition_id, team_name=team_name)
         session.add(new_pick)
     
     session.commit()
     return {"message": "Pick saved"}
 
 @app.get("/public/gameweeks")
-async def get_public_gameweeks(session: Session = Depends(get_session)):
-    return session.exec(select(Gameweek).order_by(Gameweek.id)).all()
+async def get_public_gameweeks(competition_id: int = 1, session: Session = Depends(get_session)):
+    return session.exec(select(Gameweek).where(Gameweek.competition_id == competition_id).order_by(Gameweek.number)).all()
 
 @app.get("/public/fixtures/{gw_id}")
 async def get_public_fixtures(gw_id: int, session: Session = Depends(get_session)):
     return session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id).order_by(Fixture.kickoff_time)).all()
 
 @app.get("/public/standings")
-async def get_public_standings(session: Session = Depends(get_session)):
+async def get_public_standings(competition_id: int = 1, session: Session = Depends(get_session)):
     users = session.exec(select(User).where(User.is_admin == False)).all()
-    current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
+    current_gw = session.exec(select(Gameweek).where(
+        and_(Gameweek.competition_id == competition_id, Gameweek.is_current == True)
+    )).first()
     
-    total_re_entries = sum(u.number_of_re_entries for u in users)
-    total_rollover_re_entries = sum(u.number_of_rollover_re_entries for u in users)
-    prize_pot = (len(users) + total_re_entries + total_rollover_re_entries) * 5
+    statuses = session.exec(select(UserCompetitionStatus).where(UserCompetitionStatus.competition_id == competition_id)).all()
+    status_map = {s.user_id: s for s in statuses}
+    
+    total_re_entries = sum(s.number_of_re_entries for s in statuses)
+    total_rollover_re_entries = sum(getattr(s, 'number_of_rollovers', 0) for s in statuses)
+    paid_entries = sum(1 for s in statuses if s.paid)
+    prize_pot = (paid_entries + total_re_entries + total_rollover_re_entries) * 5
     
     results = []
     for u in users:
+        status = status_map.get(u.id)
+        if not status: continue
         pick = None
         if current_gw:
             pick_obj = session.exec(select(Pick).where(and_(Pick.user_id == u.id, Pick.gameweek_id == current_gw.id))).first()
-            if pick_obj:
-                # Always show all picks for this week
-                pick = pick_obj.team_name
+            if pick_obj: pick = pick_obj.team_name
         
         results.append({
             "name": u.name,
-            "is_active": u.is_active,
+            "is_active": status.is_active,
+            "eligible_for_rebuy": status.eligible_for_rebuy,
             "current_pick": pick,
-            "re_entries": u.number_of_re_entries,
-            "rollover_re_entries": u.number_of_rollover_re_entries
+            "re_entries": status.number_of_re_entries,
+            "rollover_re_entries": getattr(status, 'number_of_rollovers', 0)
         })
+    
     return {
-        "gw_id": current_gw.id if current_gw else None,
+        "gw_id": current_gw.number if current_gw else None,
         "standings": results,
         "total_re_entries": total_re_entries,
         "total_rollover_re_entries": total_rollover_re_entries,
         "prize_pot": prize_pot
     }
 
-@app.get("/standings")
-async def get_standings(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    users = session.exec(select(User).where(User.is_admin == False)).all()
-    current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
-    
-    results = []
-    for u in users:
-        pick = None
-        if current_gw:
-            pick_obj = session.exec(select(Pick).where(and_(Pick.user_id == u.id, Pick.gameweek_id == current_gw.id))).first()
-            if pick_obj:
-                # Always show own pick, show others only if deadline passed
-                # Always show all picks for this week
-                pick = pick_obj.team_name
-        
-        results.append({
-            "name": u.name,
-            "is_active": u.is_active,
-            "current_pick": pick
-        })
-    return results
-
 @app.get("/history")
-async def get_user_history(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    # Get all picks for the user, ordered by gameweek
-    picks = session.exec(select(Pick).where(Pick.user_id == current_user.id).order_by(Pick.gameweek_id)).all()
+async def get_user_history(competition_id: int = 1, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    picks = session.exec(select(Pick).where(and_(
+        Pick.user_id == current_user.id, Pick.competition_id == competition_id
+    )).order_by(Pick.gameweek_id)).all()
     
     history = []
     for pick in picks:
         gw = session.get(Gameweek, pick.gameweek_id)
         if not gw: continue
-
-        # Find the fixture for this team in this gameweek
-        fixture = session.exec(select(Fixture).where(
-            and_(
-                Fixture.gameweek_id == pick.gameweek_id,
-                (Fixture.home_team == pick.team_name) | (Fixture.away_team == pick.team_name)
-            )
-        )).first()
+        fixture = session.exec(select(Fixture).where(and_(
+            Fixture.gameweek_id == pick.gameweek_id,
+            (Fixture.home_team == pick.team_name) | (Fixture.away_team == pick.team_name)
+        ))).first()
         
         outcome = "Pending"
         if fixture:
@@ -491,17 +408,18 @@ async def get_user_history(current_user: User = Depends(get_current_user), sessi
                 outcome = "WON" if fixture.winner == pick.team_name else "LOST"
             elif fixture.status in ['POSTPONED', 'CANCELLED']:
                 outcome = "THROUGH (Postponed)" if gw.is_processed else "POSTPONED"
-            elif fixture.status == 'IN_PLAY':
-                outcome = "In Play"
+            elif fixture.status == 'IN_PLAY': outcome = "In Play"
         
         history.append({
-            "gameweek_id": pick.gameweek_id,
+            "gameweek_number": gw.number,
             "team_name": pick.team_name,
             "outcome": outcome,
             "is_processed": gw.is_processed
         })
-    
     return history
 
-# Serve static files (Frontend)
+@app.get("/public/competitions")
+async def get_public_competitions(session: Session = Depends(get_session)):
+    return session.exec(select(Competition).where(Competition.is_active == True)).all()
+
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

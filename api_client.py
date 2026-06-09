@@ -6,36 +6,48 @@ from typing import List, Dict
 API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
 
-def get_pl_fixtures() -> List[Dict]:
-    """Fetch Premier League fixtures for the current season."""
+def get_fixtures(competition_code: str = "PL") -> List[Dict]:
+    """Fetch fixtures for a specific competition."""
     if not API_KEY:
         raise Exception("FOOTBALL_DATA_API_KEY environment variable is not set")
         
     headers = {"X-Auth-Token": API_KEY}
-    url = f"{BASE_URL}/competitions/PL/matches"
+    url = f"{BASE_URL}/competitions/{competition_code}/matches"
     
     try:
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
             matches = response.json().get("matches", [])
-            if not matches:
-                raise Exception("API returned 200 OK but the 'matches' list is empty. This could mean the competition ID is wrong or no matches are scheduled.")
+            if not matches and competition_code == "PL":
+                 # Some competitions might genuinely have no matches scheduled yet
+                 raise Exception(f"API returned 200 OK but the 'matches' list for {competition_code} is empty.")
             return matches
         else:
             raise Exception(f"API Error {response.status_code}: {response.text}")
     except requests.exceptions.RequestException as e:
         raise Exception(f"Connection error to Football API: {str(e)}")
 
-def get_current_gameweek_number() -> int:
-    """Fetch current gameweek number from competition info."""
+def get_pl_fixtures() -> List[Dict]:
+    return get_fixtures("PL")
+
+def get_wc_fixtures() -> List[Dict]:
+    return get_fixtures("WC")
+
+def get_current_matchday(competition_code: str = "PL") -> int:
+    """Fetch current matchday/gameweek number from competition info."""
     if not API_KEY:
         return 1
     headers = {"X-Auth-Token": API_KEY}
-    url = f"{BASE_URL}/competitions/PL"
+    url = f"{BASE_URL}/competitions/{competition_code}"
     try:
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
-            return response.json().get("currentSeason", {}).get("currentMatchday", 1)
+            data = response.json()
+            # For tournaments, currentMatchday might be null, so we check season or stages
+            return data.get("currentSeason", {}).get("currentMatchday") or 1
     except:
         pass
     return 1
+
+def get_current_gameweek_number() -> int:
+    return get_current_matchday("PL")

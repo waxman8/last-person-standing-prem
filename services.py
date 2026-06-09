@@ -1,98 +1,156 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlmodel import select, and_
 from database import get_session
-from models import User, Gameweek, Fixture, Pick
+from models import User, Gameweek, Fixture, Pick, Competition, UserCompetitionStatus
 import api_client
 
 def sync_fixtures_logic(session):
-    """Core logic to fetch and update fixtures, and process live results."""
-    matches = api_client.get_pl_fixtures()
+    """Core logic to fetch and update fixtures for all active competitions."""
+    competitions = session.exec(select(Competition).where(Competition.is_active == True)).all()
     
-    current_gw_num = api_client.get_current_gameweek_number()
-    
-    # Check if a current gameweek already exists to avoid overriding it
-    existing_current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
-    
-    # Update Gameweeks and Fixtures
-    for m in matches:
-        gw_id = m['matchday']
-        kickoff = datetime.fromisoformat(m['utcDate'].replace('Z', '+00:00')).replace(tzinfo=None)
-        
-        # Upsert Gameweek
-        gw = session.get(Gameweek, gw_id)
-        if not gw:
-            is_curr = (gw_id == current_gw_num) if not existing_current_gw else False
-            gw = Gameweek(id=gw_id, deadline=kickoff, is_current=is_curr)
-            session.add(gw)
-        else:
-            # ONLY update deadline for future weeks. Current and processed weeks are locked.
-            # Also skip matches that have already been played out of turn.
-            if not gw.is_current and not gw.is_processed and m['status'] not in ['FINISHED', 'POSTPONED', 'CANCELLED']:
-                if kickoff < gw.deadline:
-                    gw.deadline = kickoff
-            # Only update is_current if no gameweek is currently set as current
-            if not existing_current_gw:
-                gw.is_current = (gw_id == current_gw_num)
-        
-        # Upsert Fixture
-        fix = session.get(Fixture, m['id'])
-        if not fix:
-            fix = Fixture(
-                id=m['id'],
-                gameweek_id=gw_id,
-                home_team=m['homeTeam']['name'],
-                away_team=m['awayTeam']['name'],
-                kickoff_time=kickoff,
-                status=m['status']
-            )
-            session.add(fix)
-        else:
-            fix.status = m['status']
-            fix.kickoff_time = kickoff
-
-        # Update scores if available in API
-        score_data = m.get('score') or {}
-        ft_score = score_data.get('fullTime') or {}
-        home_score = ft_score.get('home')
-        away_score = ft_score.get('away')
-
-        if home_score is not None:
-            # Use our established current gameweek to determine if a match is historic
-            # if no current GW exists yet, fall back to the API suggestion
-            ref_gw_id = existing_current_gw.id if existing_current_gw else current_gw_num
-            is_historic = gw_id < ref_gw_id
-            if not is_historic or fix.home_score is None:
-                fix.home_score = home_score
-                fix.away_score = away_score
-                if fix.home_score > fix.away_score:
-                    fix.winner = fix.home_team
-                elif fix.away_score > fix.home_score:
-                    fix.winner = fix.away_team
+    for comp in competitions:
+        try:
+            matches = api_client.get_fixtures(comp.code)
+            current_gw_num = api_client.get_current_matchday(comp.code)
+            
+            existing_current_gw = session.exec(
+                select(Gameweek).where(
+                    and_(Gameweek.competition_id == comp.id, Gameweek.is_current == True)
+                )
+            ).first()
+            
+            for m in matches:
+                # Map stage/matchday
+                stage = m.get('stage', 'REGULAR')
+                matchday = m.get('matchday')
+                
+                # In tournaments, matchday might be null for knockouts
+                # We need a unique way to identify the "Gameweek" for our app
+                # For simplicity, we'll use a sequence or map stages to numbers
+                gw_number = matchday if matchday else stage_to_number(stage)
+                
+                kickoff = datetime.fromisoformat(m['utcDate'].replace('Z', '+00:00')).replace(tzinfo=None)
+                
+                # Upsert Gameweek
+                gw = session.exec(
+                    select(Gameweek).where(
+                        and_(Gameweek.competition_id == comp.id, Gameweek.number == gw_number)
+                    )
+                ).first()
+                
+                if not gw:
+                    is_curr = (gw_number == current_gw_num) if not existing_current_gw else False
+                    gw = Gameweek(number=gw_number, competition_id=comp.id, deadline=kickoff, is_current=is_curr)
+                    session.add(gw)
+                    session.flush() # Get ID
                 else:
-                    fix.winner = "DRAW"
+                    if not gw.is_current and not gw.is_processed and m['status'] not in ['FINISHED', 'POSTPONED', 'CANCELLED']:
+                        if kickoff < gw.deadline:
+                            gw.deadline = kickoff
+                    if not existing_current_gw:
+                        gw.is_current = (gw_number == current_gw_num)
+                
+                # Upsert Fixture
+                fix = session.get(Fixture, m['id'])
+                if not fix:
+                    fix = Fixture(
+                        id=m['id'],
+                        gameweek_id=gw.id,
+                        competition_id=comp.id,
+                        home_team=m.get('homeTeam', {}).get('name'),
+                        away_team=m.get('awayTeam', {}).get('name'),
+                        kickoff_time=kickoff,
+                        status=m['status'],
+                        stage=stage
+                    )
+                    session.add(fix)
+                else:
+                    fix.status = m['status']
+                    fix.kickoff_time = kickoff
+                    fix.stage = stage
+
+                # Process results
+                score_data = m.get('score') or {}
+                winner_code = score_data.get('winner') # HOME_TEAM, AWAY_TEAM, DRAW
+                
+                if winner_code:
+                    if winner_code == "HOME_TEAM":
+                        fix.winner = fix.home_team
+                    elif winner_code == "AWAY_TEAM":
+                        fix.winner = fix.away_team
+                    else:
+                        fix.winner = "DRAW"
+                    
+                    # Update scores
+                    ft = score_data.get('fullTime') or {}
+                    fix.home_score = ft.get('home')
+                    fix.away_score = ft.get('away')
+
+            session.commit()
+            
+            # Live Processing for this competition
+            process_live_results(session, comp)
+            
+        except Exception as e:
+            print(f"Error syncing {comp.code}: {e}")
+            continue
+
+    return {"message": "Fixtures synced and live results applied for all competitions"}
+
+def stage_to_number(stage: str) -> int:
+    """Maps tournament stages to a numeric sequence."""
+    mapping = {
+        'GROUP_STAGE': 1, # Should be handled by matchday usually
+        'ROUND_OF_32': 4,
+        'ROUND_OF_16': 5,
+        'QUARTER_FINALS': 6,
+        'SEMI_FINALS': 7,
+        'FINAL': 8,
+        'THIRD_PLACE': 9
+    }
+    return mapping.get(stage, 10)
+
+def process_live_results(session, competition):
+    """Processes picks for the current gameweek of a competition."""
+    current_gw = session.exec(
+        select(Gameweek).where(
+            and_(Gameweek.competition_id == competition.id, Gameweek.is_current == True)
+        )
+    ).first()
+    
+    if not current_gw:
+        return
+
+    picks = session.exec(select(Pick).where(Pick.gameweek_id == current_gw.id)).all()
+    for pick in picks:
+        # Get competition-specific status
+        status = session.exec(
+            select(UserCompetitionStatus).where(
+                and_(
+                    UserCompetitionStatus.user_id == pick.user_id,
+                    UserCompetitionStatus.competition_id == competition.id
+                )
+            )
+        ).first()
+        
+        if not status or not status.is_active:
+            continue
+        
+        fixture = session.exec(select(Fixture).where(
+            and_(
+                Fixture.gameweek_id == current_gw.id,
+                (Fixture.home_team == pick.team_name) | (Fixture.away_team == pick.team_name)
+            )
+        )).first()
+        
+        if fixture and fixture.status == 'FINISHED':
+            if fixture.winner != pick.team_name:
+                status.is_active = False
+                # Eligibility for re-buy (WC rules: MD1-3, R32, R16, R8)
+                if competition.code == "WC":
+                    # R8 is QUARTER_FINALS
+                    if fixture.stage in ['GROUP_STAGE', 'ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINALS']:
+                        status.eligible_for_rebuy = True
+                session.add(status)
     
     session.commit()
-    
-    # Live Processing
-    current_gw = session.exec(select(Gameweek).where(Gameweek.is_current == True)).first()
-    if current_gw:
-        picks = session.exec(select(Pick).where(Pick.gameweek_id == current_gw.id)).all()
-        for pick in picks:
-            user = session.get(User, pick.user_id)
-            if not user or not user.is_active or user.is_admin:
-                continue
-            
-            fixture = session.exec(select(Fixture).where(
-                and_(
-                    Fixture.gameweek_id == current_gw.id,
-                    (Fixture.home_team == pick.team_name) | (Fixture.away_team == pick.team_name)
-                )
-            )).first()
-            
-            if fixture and fixture.status == 'FINISHED':
-                if fixture.winner != pick.team_name:
-                    user.is_active = False
-                    session.add(user)
-        
-        session.commit()
-    return {"message": "Fixtures synced and live results applied"}

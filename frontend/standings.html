@@ -40,10 +40,15 @@
             <h1 class="text-2xl md:text-3xl font-black text-blue-900 tracking-tight flex items-center">
                 <span class="mr-2">⚽</span> Picks for the week <span class="ml-2 text-blue-500 text-sm font-bold bg-blue-50 px-2 py-1 rounded border border-blue-100" v-if="gwId">GW {{ gwId }}</span>
             </h1>
-            <div class="flex items-center gap-2">
-                <a href="/index.html" class="text-sm font-medium text-gray-500 hover:text-blue-600 transition">Home</a>
-                <span class="text-gray-300">|</span>
-                <span class="text-sm text-gray-400">View Only</span>
+            <div class="flex flex-col items-end gap-2">
+                <div class="flex items-center gap-2">
+                    <a href="/index.html" class="text-sm font-medium text-gray-500 hover:text-blue-600 transition">Home</a>
+                    <span class="text-gray-300">|</span>
+                    <span class="text-sm text-gray-400">View Only</span>
+                </div>
+                <select v-model="selectedCompId" @change="loadData" class="border p-1 rounded text-[10px] font-bold bg-white shadow-sm uppercase tracking-wider text-blue-900">
+                    <option v-for="c in competitions" :key="c.id" :value="c.id">{{ c.name }}</option>
+                </select>
             </div>
         </div>
 
@@ -341,6 +346,8 @@
                     fixtures: [],
                     hasCelebrated: false,
                     hideCelebration: false,
+                    competitions: [],
+                    selectedCompId: 1,
                     teamBadges: {
                         "Arsenal FC": 57, "Aston Villa FC": 58, "AFC Bournemouth": 1044,
                         "Brentford FC": 402, "Brighton & Hove Albion FC": 397, "Chelsea FC": 61,
@@ -398,24 +405,8 @@
             },
                 async mounted() {
                 try {
-                    const res = await fetch('/public/standings');
-                    const data = await res.json();
-                    this.standings = data.standings;
-                    this.totalReEntries = data.total_re_entries || 0;
-                    this.totalRolloverReEntries = data.total_rollover_re_entries || 0;
-                    this.prizePot = data.prize_pot || 0;
-                    this.gwId = data.gw_id;
-
-                    // Initialize gameweeks and fixtures
-                    await this.loadGameweeks();
-                    if (this.gameweeks.length > 0) {
-                        this.currentGW = this.gameweeks.find(g => g.is_current);
-                        this.selectedGWId = this.currentGW ? this.currentGW.id : this.gameweeks[this.gameweeks.length - 1].id;
-                    }
-
-                    if (this.activeCount === 1) {
-                        this.triggerCelebration();
-                    }
+                    await this.loadCompetitions();
+                    await this.loadData();
                 } catch (e) {
                     console.error("Failed to load standings", e);
                 } finally {
@@ -423,8 +414,48 @@
                 }
             },
             methods: {
+                async loadCompetitions() {
+                    try {
+                        const res = await fetch('/public/competitions');
+                        this.competitions = await res.json();
+                        if (this.competitions.length > 0) {
+                             // Default to PL if available
+                             const pl = this.competitions.find(c => c.code === 'PL');
+                             this.selectedCompId = pl ? pl.id : this.competitions[0].id;
+                        }
+                    } catch (e) {
+                        console.error("Failed to load competitions", e);
+                    }
+                },
+                async loadData() {
+                    this.loading = true;
+                    try {
+                        const res = await fetch(`/public/standings?competition_id=${this.selectedCompId}`);
+                        const data = await res.json();
+                        this.standings = data.standings;
+                        this.totalReEntries = data.total_re_entries || 0;
+                        this.totalRolloverReEntries = data.total_rollover_re_entries || 0;
+                        this.prizePot = data.prize_pot || 0;
+                        this.gwId = data.gw_id;
+
+                        // Initialize gameweeks and fixtures
+                        await this.loadGameweeks();
+                        if (this.gameweeks.length > 0) {
+                            this.currentGW = this.gameweeks.find(g => g.is_current);
+                            this.selectedGWId = this.currentGW ? this.currentGW.id : this.gameweeks[this.gameweeks.length - 1].id;
+                        }
+
+                        if (this.activeCount === 1) {
+                            this.triggerCelebration();
+                        }
+                    } catch (e) {
+                        console.error("Failed to load standings", e);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
                 async loadGameweeks() {
-                    const res = await fetch('/public/gameweeks');
+                    const res = await fetch(`/public/gameweeks?competition_id=${this.selectedCompId}`);
                     if (res.ok) {
                         this.gameweeks = await res.json();
                     }
