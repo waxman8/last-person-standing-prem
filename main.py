@@ -338,6 +338,11 @@ async def make_pick(team_name: str, competition_id: int = 1, current_user: User 
     session.commit()
     return {"message": "Pick saved"}
 
+@app.get("/admin/fixtures/{gw_id}")
+async def get_admin_fixtures(gw_id: int, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    logger.info(f"Admin fetching fixtures for gameweek {gw_id}")
+    return session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id).order_by(Fixture.kickoff_time)).all()
+
 @app.get("/public/gameweeks")
 async def get_public_gameweeks(competition_id: int = 1, session: Session = Depends(get_session)):
     return session.exec(select(Gameweek).where(Gameweek.competition_id == competition_id).order_by(Gameweek.number)).all()

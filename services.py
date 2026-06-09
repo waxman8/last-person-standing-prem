@@ -3,15 +3,21 @@ from sqlmodel import select, and_
 from database import get_session
 from models import User, Gameweek, Fixture, Pick, Competition, UserCompetitionStatus
 import api_client
+import logging
+logger = logging.getLogger(__name__)
 
 def sync_fixtures_logic(session):
     """Core logic to fetch and update fixtures for all active competitions."""
     competitions = session.exec(select(Competition).where(Competition.is_active == True)).all()
+    logger.info(f"Starting sync for {len(competitions)} competitions")
     
     for comp in competitions:
         try:
+            logger.info(f"Syncing competition: {comp.name} ({comp.code})")
             matches = api_client.get_fixtures(comp.code)
+            logger.info(f"Fetched {len(matches)} matches for {comp.code}")
             current_gw_num = api_client.get_current_matchday(comp.code)
+            logger.info(f"Current matchday for {comp.code}: {current_gw_num}")
             
             existing_current_gw = session.exec(
                 select(Gameweek).where(
@@ -51,14 +57,21 @@ def sync_fixtures_logic(session):
                         gw.is_current = (gw_number == current_gw_num)
                 
                 # Upsert Fixture
+                home_team = m.get('homeTeam', {}).get('name')
+                away_team = m.get('awayTeam', {}).get('name')
+                
+                if not home_team or not away_team:
+                    logger.warning(f"Skipping fixture {m['id']} as teams are not yet determined")
+                    continue
+
                 fix = session.get(Fixture, m['id'])
                 if not fix:
                     fix = Fixture(
                         id=m['id'],
                         gameweek_id=gw.id,
                         competition_id=comp.id,
-                        home_team=m.get('homeTeam', {}).get('name'),
-                        away_team=m.get('awayTeam', {}).get('name'),
+                        home_team=home_team,
+                        away_team=away_team,
                         kickoff_time=kickoff,
                         status=m['status'],
                         stage=stage
@@ -92,7 +105,7 @@ def sync_fixtures_logic(session):
             process_live_results(session, comp)
             
         except Exception as e:
-            print(f"Error syncing {comp.code}: {e}")
+            logger.error(f"Error syncing {comp.code}: {str(e)}", exc_info=True)
             continue
 
     return {"message": "Fixtures synced and live results applied for all competitions"}
