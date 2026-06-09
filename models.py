@@ -55,6 +55,8 @@ class Fixture(SQLModel, table=True):
     competition_id: int = Field(foreign_key="competition.id", default=1)
     home_team: Optional[str] = None
     away_team: Optional[str] = None
+    home_team_crest: Optional[str] = None
+    away_team_crest: Optional[str] = None
     kickoff_time: datetime
     status: str  # SCHEDULED, TIMED, IN_PLAY, FINISHED, POSTPONED
     stage: str = Field(default="REGULAR") # MD1, MD2, MD3, R32, R16, QF, SF, FINAL

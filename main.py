@@ -262,6 +262,8 @@ async def get_current_fixtures(competition_id: int = 1, session: Session = Depen
         "id": f.id,
         "home_team": f.home_team,
         "away_team": f.away_team,
+        "home_team_crest": f.home_team_crest,
+        "away_team_crest": f.away_team_crest,
         "kickoff_time": f.kickoff_time,
         "status": f.status,
         "stage": f.stage,
@@ -371,15 +373,25 @@ async def get_public_standings(competition_id: int = 1, session: Session = Depen
         status = status_map.get(u.id)
         if not status: continue
         pick = None
+        pick_crest = None
         if current_gw:
             pick_obj = session.exec(select(Pick).where(and_(Pick.user_id == u.id, Pick.gameweek_id == current_gw.id))).first()
-            if pick_obj: pick = pick_obj.team_name
+            if pick_obj: 
+                pick = pick_obj.team_name
+                # Find crest for this pick from the fixture list
+                fix_for_pick = session.exec(select(Fixture).where(and_(
+                    Fixture.gameweek_id == current_gw.id,
+                    (Fixture.home_team == pick) | (Fixture.away_team == pick)
+                ))).first()
+                if fix_for_pick:
+                    pick_crest = fix_for_pick.home_team_crest if fix_for_pick.home_team == pick else fix_for_pick.away_team_crest
         
         results.append({
             "name": u.name,
             "is_active": status.is_active,
             "eligible_for_rebuy": status.eligible_for_rebuy,
             "current_pick": pick,
+            "current_pick_crest": pick_crest,
             "re_entries": status.number_of_re_entries,
             "rollover_re_entries": getattr(status, 'number_of_rollovers', 0)
         })
@@ -418,6 +430,7 @@ async def get_user_history(competition_id: int = 1, current_user: User = Depends
         history.append({
             "gameweek_number": gw.number,
             "team_name": pick.team_name,
+            "team_crest": fixture.home_team_crest if fixture.home_team == pick.team_name else fixture.away_team_crest if fixture else None,
             "outcome": outcome,
             "is_processed": gw.is_processed
         })

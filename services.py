@@ -57,9 +57,17 @@ def sync_fixtures_logic(session):
                         gw.is_current = (gw_number == current_gw_num)
                 
                 # Upsert Fixture
-                home_team = m.get('homeTeam', {}).get('name')
-                away_team = m.get('awayTeam', {}).get('name')
+                home_team_data = m.get('homeTeam', {})
+                away_team_data = m.get('awayTeam', {})
+                home_team = home_team_data.get('name')
+                away_team = away_team_data.get('name')
                 
+                # LOG TEAM INFO FOR MAPPING
+                if home_team:
+                    logger.info(f"TEAM_MAPPING: {home_team} -> {home_team_data.get('crest')}")
+                if away_team:
+                    logger.info(f"TEAM_MAPPING: {away_team} -> {away_team_data.get('crest')}")
+
                 if not home_team or not away_team:
                     logger.warning(f"Skipping fixture {m['id']} as teams are not yet determined")
                     continue
@@ -72,6 +80,8 @@ def sync_fixtures_logic(session):
                         competition_id=comp.id,
                         home_team=home_team,
                         away_team=away_team,
+                        home_team_crest=home_team_data.get('crest'),
+                        away_team_crest=away_team_data.get('crest'),
                         kickoff_time=kickoff,
                         status=m['status'],
                         stage=stage
@@ -81,6 +91,8 @@ def sync_fixtures_logic(session):
                     fix.status = m['status']
                     fix.kickoff_time = kickoff
                     fix.stage = stage
+                    fix.home_team_crest = home_team_data.get('crest')
+                    fix.away_team_crest = away_team_data.get('crest')
 
                 # Process results
                 score_data = m.get('score') or {}
