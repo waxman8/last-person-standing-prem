@@ -7,6 +7,7 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚽</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="/utils.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div id="app" class="container mx-auto px-4 py-8 max-w-2xl">
@@ -26,6 +27,9 @@
 
         <!-- Dashboard -->
         <div v-else>
+            <div class="text-right mb-4">
+                <button @click="logout" class="text-gray-500 hover:underline text-sm font-medium">Logout</button>
+            </div>
             <!-- Competition Selector -->
             <div class="bg-white p-4 rounded-lg shadow-md mb-6 flex items-center justify-between">
                 <label class="font-bold text-gray-700 mr-4">Competition:</label>
@@ -57,7 +61,7 @@
             <div v-if="isUserActive" class="mb-8">
                 <!-- Already have a pick -->
                 <div v-if="myCurrentPick" class="bg-gradient-to-r from-blue-600 to-indigo-700 p-8 rounded-2xl shadow-xl text-white relative overflow-hidden">
-                    <h3 class="text-lg font-bold opacity-80 uppercase tracking-widest mb-4">Your pick for this stage</h3>
+                    <h3 class="text-lg font-bold opacity-80 uppercase tracking-widest mb-4">Your pick for {{ getFriendlyName() }}</h3>
                     <div class="flex items-center justify-between">
                         <div class="flex items-center">
                             <div class="bg-white p-3 rounded-xl mr-6 shadow-lg">
@@ -153,7 +157,7 @@
 
             <!-- Standings -->
             <div class="bg-white p-6 rounded-lg shadow-md">
-                <h3 class="text-xl font-bold mb-4">Game Standings</h3>
+                <h3 class="text-xl font-bold mb-4">Game Standings ({{ getFriendlyName() }})</h3>
                 <div class="space-y-3">
                     <div v-for="player in standings" class="flex justify-between border-b pb-2">
                         <span :class="{'line-through text-gray-400': !player.is_active}">{{ player.name }}</span>
@@ -169,7 +173,6 @@
                 </div>
             </div>
 
-            <button @click="logout" class="mt-8 text-gray-500 hover:underline w-full text-center">Logout</button>
         </div>
     </div>
 
@@ -284,6 +287,11 @@
                 },
                 formatDate(dateStr) {
                     return new Date(dateStr).toLocaleString();
+                },
+                getFriendlyName() {
+                    if (!this.fixtures || this.fixtures.length === 0) return 'this stage';
+                    const gw = this.fixtures[0].gameweek;
+                    return window.LMS_UTILS.getFriendlyStageName(gw);
                 },
                 getLogoUrl(teamName, crestUrl) {
                     const fallback = 'https://crests.football-data.org/77.svg'; // Default globe icon

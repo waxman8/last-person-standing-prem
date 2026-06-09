@@ -8,6 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="/utils.js"></script>
 </head>
 <body class="bg-gray-50 min-h-screen">
     <div id="app" class="container mx-auto px-4 py-8 max-w-3xl relative">
@@ -38,7 +39,7 @@
 
         <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
             <h1 class="text-2xl md:text-3xl font-black text-blue-900 tracking-tight flex items-center">
-                <span class="mr-2">⚽</span> Picks for the week <span class="ml-2 text-blue-500 text-sm font-bold bg-blue-50 px-2 py-1 rounded border border-blue-100" v-if="gwId">GW {{ gwId }}</span>
+                <span class="mr-2">⚽</span> Picks for the week <span class="ml-2 text-blue-500 text-sm font-bold bg-blue-50 px-2 py-1 rounded border border-blue-100" v-if="gwId">{{ getFriendlyName(currentGW) }}</span>
             </h1>
             <div class="flex flex-col items-end gap-2">
                 <div class="flex items-center gap-2">
@@ -58,7 +59,7 @@
                 <div>
                     <h3 class="text-[10px] font-black text-yellow-800 uppercase tracking-widest mb-1">Active Gameweek</h3>
                     <div class="flex items-baseline gap-2">
-                        <span class="text-2xl font-black text-yellow-900 leading-none">GW {{ currentGW.id }}</span>
+                        <span class="text-2xl font-black text-yellow-900 leading-none">{{ getFriendlyName(currentGW) }}</span>
                         <span class="text-xs font-bold text-yellow-700">Deadline: {{ formatDate(currentGW.deadline) }}</span>
                     </div>
                 </div>
@@ -207,7 +208,7 @@
                             <button @click="changeGW(-1)" class="px-2 py-0.5 hover:bg-gray-50 text-gray-500 transition-colors text-sm font-bold"><</button>
                             <select v-model="selectedGWId" class="font-bold text-xs border-none bg-transparent focus:ring-0 cursor-pointer text-blue-900 uppercase tracking-tight px-1">
                                 <option v-for="gw in gameweeks" :key="gw.id" :value="gw.id">
-                                    GW {{ gw.id }} {{ gw.is_current ? ' (Active)' : '' }}
+                                    {{ getFriendlyName(gw) }} {{ gw.is_current ? ' (Active)' : '' }}
                                 </option>
                             </select>
                             <button @click="changeGW(1)" class="px-2 py-0.5 hover:bg-gray-50 text-gray-500 transition-colors text-sm font-bold">></button>
@@ -465,6 +466,10 @@
                     if (!dateStr) return '-';
                     const d = new Date(dateStr);
                     return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+                },
+                getFriendlyName(gw) {
+                    if (!gw) return 'Loading...';
+                    return window.LMS_UTILS.getFriendlyStageName(gw);
                 },
                 triggerCelebration() {
                     if (this.hasCelebrated) return;
