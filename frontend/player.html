@@ -8,6 +8,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="/utils.js"></script>
+    <style>
+        [v-cloak] { display: none; }
+    </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div id="app" class="container mx-auto px-4 py-8 max-w-2xl">
@@ -26,7 +29,7 @@
         </div>
 
         <!-- Dashboard -->
-        <div v-else>
+        <div v-else v-cloak>
             <div class="text-right mb-4">
                 <button @click="logout" class="text-gray-500 hover:underline text-sm font-medium">Logout</button>
             </div>
@@ -41,7 +44,10 @@
             <div class="flex justify-between items-center mb-6">
                 <div>
                     <p class="text-gray-600">Welcome,</p>
-                    <h2 class="text-2xl font-bold">{{ user.name }}</h2>
+                    <h2 class="text-2xl font-bold">
+                        <span v-if="user.name">{{ user.name }}</span>
+                        <span v-else class="text-gray-300">...</span>
+                    </h2>
                 </div>
                 <div v-if="isUserActive" class="bg-green-100 text-green-800 px-4 py-2 rounded-full font-bold">
                     ACTIVE
@@ -136,7 +142,7 @@
             </div>
 
             <!-- Inactive Status -->
-            <div v-else-if="!eligibleForRebuy" class="bg-red-50 border-2 border-red-200 p-8 rounded-2xl shadow-sm mb-8 text-center">
+            <div v-else-if="isUserOut && !eligibleForRebuy" class="bg-red-50 border-2 border-red-200 p-8 rounded-2xl shadow-sm mb-8 text-center">
                 <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500">
                     <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                 </div>
@@ -182,7 +188,7 @@
             <div class="bg-white p-6 rounded-lg shadow-md">
                 <h3 class="text-xl font-bold mb-4">Game Standings ({{ getFriendlyName() }})</h3>
                 <div class="space-y-3">
-                    <div v-for="player in standings" class="flex justify-between border-b pb-2">
+                    <div v-for="player in filteredStandings" class="flex justify-between border-b pb-2">
                         <span :class="{'line-through text-gray-400': !player.is_active}">{{ player.name }}</span>
                         <span class="font-medium min-w-0 ml-4">
                             <span v-if="player.current_pick" class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm flex items-center truncate max-w-[150px]" :title="player.current_pick">
@@ -206,7 +212,7 @@
                 return {
                     pin: '',
                     token: localStorage.getItem('token'),
-                    user: {},
+                    user: JSON.parse(localStorage.getItem('user_profile') || '{}'),
                     competitions: [],
                     selectedCompId: 1,
                     fixtures: [],
@@ -232,11 +238,18 @@
                 eligibleForRebuy() {
                     return this.currentStanding ? this.currentStanding.eligible_for_rebuy : false;
                 },
+                isUserOut() {
+                    return this.currentStanding ? (!this.currentStanding.is_active && !this.currentStanding.is_pending) : false;
+                },
                 myCurrentPick() {
                     return this.currentStanding ? this.currentStanding.current_pick : null;
                 },
                 myCurrentPickCrest() {
                     return this.currentStanding ? this.currentStanding.current_pick_crest : null;
+                },
+                filteredStandings() {
+                    if (!this.standings) return [];
+                    return this.standings.filter(p => !p.is_pending);
                 }
             },
             async mounted() {
@@ -266,6 +279,7 @@
                 logout() {
                     this.token = null;
                     localStorage.removeItem('token');
+                    localStorage.removeItem('user_profile');
                 },
                 async loadInitial() {
                     const headers = { 'Authorization': `Bearer ${this.token}` };
@@ -283,6 +297,7 @@
                     const headers = { 'Authorization': `Bearer ${this.token}` };
                     const userRes = await fetch('/me', { headers });
                     this.user = await userRes.json();
+                    localStorage.setItem('user_profile', JSON.stringify(this.user));
                     
                     const fixRes = await fetch(`/fixtures?competition_id=${this.selectedCompId}`, { headers });
                     this.fixtures = await fixRes.json();
