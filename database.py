@@ -18,13 +18,6 @@ def run_migrations():
         if "is_rollover" not in columns:
             conn.execute(text("ALTER TABLE gameweek ADD COLUMN is_rollover BOOLEAN DEFAULT 0"))
             print("Migration: Added is_rollover to gameweek table")
-
-        # Check for User.number_of_rollover_re_entries
-        cursor = conn.execute(text("PRAGMA table_info(user)"))
-        columns = [row[1] for row in cursor.fetchall()]
-        if "number_of_rollover_re_entries" not in columns:
-            conn.execute(text("ALTER TABLE user ADD COLUMN number_of_rollover_re_entries INTEGER DEFAULT 0"))
-            print("Migration: Added number_of_rollover_re_entries to user table")
         
         conn.commit()
 

@@ -246,9 +246,10 @@
                     const compRes = await fetch('/public/competitions', { headers });
                     this.competitions = await compRes.json();
                     if (this.competitions.length > 0) {
-                        // Default to WC if available, else PL
+                        // Default to WC if available, else PL, else first
                         const wc = this.competitions.find(c => c.code === 'WC');
-                        this.selectedCompId = wc ? wc.id : this.competitions[0].id;
+                        const pl = this.competitions.find(c => c.code === 'PL');
+                        this.selectedCompId = wc ? wc.id : (pl ? pl.id : this.competitions[0].id);
                     }
                     await this.loadData();
                 },

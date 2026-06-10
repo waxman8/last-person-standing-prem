@@ -38,6 +38,7 @@ def migrate():
             is_active BOOLEAN NOT NULL DEFAULT 1,
             eligible_for_rebuy BOOLEAN NOT NULL DEFAULT 0,
             number_of_re_entries INTEGER NOT NULL DEFAULT 0,
+            number_of_rollovers INTEGER NOT NULL DEFAULT 0,
             paid BOOLEAN NOT NULL DEFAULT 0,
             FOREIGN KEY(user_id) REFERENCES user(id),
             FOREIGN KEY(competition_id) REFERENCES competition(id)

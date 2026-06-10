@@ -6,7 +6,7 @@ from typing import List, Dict
 API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
 
-def get_fixtures(competition_code: str = "PL") -> List[Dict]:
+def get_fixtures(competition_code: str = "WC") -> List[Dict]:
     """Fetch fixtures for a specific competition."""
     if not API_KEY:
         raise Exception("FOOTBALL_DATA_API_KEY environment variable is not set")
@@ -33,7 +33,7 @@ def get_pl_fixtures() -> List[Dict]:
 def get_wc_fixtures() -> List[Dict]:
     return get_fixtures("WC")
 
-def get_current_matchday(competition_code: str = "PL") -> int:
+def get_current_matchday(competition_code: str = "WC") -> int:
     """Fetch current matchday/gameweek number from competition info."""
     if not API_KEY:
         return 1

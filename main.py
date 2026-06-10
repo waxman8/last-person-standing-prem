@@ -132,7 +132,7 @@ async def delete_user(user_id: int, admin: User = Depends(get_admin_user), sessi
     return {"message": "User deleted successfully"}
 
 @app.post("/admin/users/{user_id}/re-entry")
-async def user_re_entry(user_id: int, competition_id: int = 1, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+async def user_re_entry(user_id: int, competition_id: int = 2, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
     status = session.exec(
         select(UserCompetitionStatus).where(
             and_(UserCompetitionStatus.user_id == user_id, UserCompetitionStatus.competition_id == competition_id)
@@ -246,13 +246,13 @@ async def get_competitions(admin: User = Depends(get_admin_user), session: Sessi
     return session.exec(select(Competition)).all()
 
 @app.get("/admin/gameweeks")
-async def get_gameweeks(competition_id: int = 1, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+async def get_gameweeks(competition_id: int = 2, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
     return session.exec(select(Gameweek).where(Gameweek.competition_id == competition_id).order_by(Gameweek.number)).all()
 
 # --- Player Routes ---
 
 @app.get("/fixtures")
-async def get_current_fixtures(competition_id: int = 1, session: Session = Depends(get_session)):
+async def get_current_fixtures(competition_id: int = 2, session: Session = Depends(get_session)):
     current_gw = session.exec(select(Gameweek).where(
         and_(Gameweek.competition_id == competition_id, Gameweek.is_current == True)
     )).first()
@@ -271,7 +271,7 @@ async def get_current_fixtures(competition_id: int = 1, session: Session = Depen
     } for f in fixtures]
 
 @app.post("/picks")
-async def make_pick(team_name: str, competition_id: int = 1, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+async def make_pick(team_name: str, competition_id: int = 2, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     status = session.exec(select(UserCompetitionStatus).where(
         and_(UserCompetitionStatus.user_id == current_user.id, UserCompetitionStatus.competition_id == competition_id)
     )).first()
@@ -346,7 +346,7 @@ async def get_admin_fixtures(gw_id: int, admin: User = Depends(get_admin_user), 
     return session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id).order_by(Fixture.kickoff_time)).all()
 
 @app.get("/public/gameweeks")
-async def get_public_gameweeks(competition_id: int = 1, session: Session = Depends(get_session)):
+async def get_public_gameweeks(competition_id: int = 2, session: Session = Depends(get_session)):
     return session.exec(select(Gameweek).where(Gameweek.competition_id == competition_id).order_by(Gameweek.number)).all()
 
 @app.get("/public/fixtures/{gw_id}")
@@ -354,7 +354,7 @@ async def get_public_fixtures(gw_id: int, session: Session = Depends(get_session
     return session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id).order_by(Fixture.kickoff_time)).all()
 
 @app.get("/public/standings")
-async def get_public_standings(competition_id: int = 1, session: Session = Depends(get_session)):
+async def get_public_standings(competition_id: int = 2, session: Session = Depends(get_session)):
     users = session.exec(select(User).where(User.is_admin == False)).all()
     current_gw = session.exec(select(Gameweek).where(
         and_(Gameweek.competition_id == competition_id, Gameweek.is_current == True)
@@ -405,7 +405,7 @@ async def get_public_standings(competition_id: int = 1, session: Session = Depen
     }
 
 @app.get("/history")
-async def get_user_history(competition_id: int = 1, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+async def get_user_history(competition_id: int = 2, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     picks = session.exec(select(Pick).where(and_(
         Pick.user_id == current_user.id, Pick.competition_id == competition_id
     )).order_by(Pick.gameweek_id)).all()

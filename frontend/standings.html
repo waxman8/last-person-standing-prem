@@ -409,9 +409,10 @@
                         const res = await fetch('/public/competitions');
                         this.competitions = await res.json();
                         if (this.competitions.length > 0) {
-                             // Default to PL if available
+                             // Default to WC if available, else PL, else first
+                             const wc = this.competitions.find(c => c.code === 'WC');
                              const pl = this.competitions.find(c => c.code === 'PL');
-                             this.selectedCompId = pl ? pl.id : this.competitions[0].id;
+                             this.selectedCompId = wc ? wc.id : (pl ? pl.id : this.competitions[0].id);
                         }
                     } catch (e) {
                         console.error("Failed to load competitions", e);
