@@ -43,8 +43,31 @@
                     <p class="text-gray-600">Welcome,</p>
                     <h2 class="text-2xl font-bold">{{ user.name }}</h2>
                 </div>
-                <div :class="isUserActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" class="px-4 py-2 rounded-full font-bold">
-                    {{ isUserActive ? 'ACTIVE' : 'ELIMINATED' }}
+                <div v-if="isUserActive" class="bg-green-100 text-green-800 px-4 py-2 rounded-full font-bold">
+                    ACTIVE
+                </div>
+                <div v-else-if="isUserPending" class="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-full font-bold">
+                    PENDING
+                </div>
+                <div v-else class="bg-red-100 text-red-800 px-4 py-2 rounded-full font-bold">
+                    ELIMINATED
+                </div>
+            </div>
+
+            <!-- Pending Status / Payment Urge -->
+            <div v-if="isUserPending" class="mb-8 bg-blue-50 border-2 border-blue-200 p-8 rounded-2xl shadow-sm text-center">
+                <div class="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-500">
+                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                </div>
+                <h3 class="text-2xl font-black text-blue-800 mb-2">Stuck in the Tunnel?</h3>
+                <p class="text-blue-700 leading-relaxed mb-6">
+                    You're currently <span class="font-bold">Pending</span>. The gaffer won't let you on the pitch until you've settled the entry fee!
+                    <br><br>
+                    Cough up the <span class="font-bold underline decoration-blue-400 decoration-2">£5 entry fee</span> to the admin to get your registration over the line.
+                    Don't be the one left watching from the stands while everyone else is chasing the glory (and the pot)!
+                </p>
+                <div class="inline-block bg-blue-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg">
+                    Awaiting Payment Approval
                 </div>
             </div>
 
@@ -202,6 +225,9 @@
                 },
                 isUserActive() {
                     return this.currentStanding ? this.currentStanding.is_active : false;
+                },
+                isUserPending() {
+                    return this.currentStanding ? this.currentStanding.is_pending : false;
                 },
                 eligibleForRebuy() {
                     return this.currentStanding ? this.currentStanding.eligible_for_rebuy : false;
