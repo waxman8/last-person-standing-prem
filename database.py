@@ -19,6 +19,18 @@ def run_migrations():
             conn.execute(text("ALTER TABLE gameweek ADD COLUMN is_rollover BOOLEAN DEFAULT 0"))
             print("Migration: Added is_rollover to gameweek table")
         
+        # Check for UserCompetitionStatus.status
+        cursor = conn.execute(text("PRAGMA table_info(usercompetitionstatus)"))
+        columns = [row[1] for row in cursor.fetchall()]
+        if "status" not in columns:
+            # Add status column
+            conn.execute(text("ALTER TABLE usercompetitionstatus ADD COLUMN status VARCHAR DEFAULT 'ACTIVE'"))
+            # For existing records, if is_active was true, status is ACTIVE, else OUT
+            if "is_active" in columns:
+                conn.execute(text("UPDATE usercompetitionstatus SET status = 'ACTIVE' WHERE is_active = 1"))
+                conn.execute(text("UPDATE usercompetitionstatus SET status = 'OUT' WHERE is_active = 0"))
+            print("Migration: Added status to usercompetitionstatus table")
+
         conn.commit()
 
 def init_db():

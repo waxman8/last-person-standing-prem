@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 import sys
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -95,6 +96,9 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
 
 @app.post("/admin/users", response_model=User)
 async def create_user(user_in: User, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    if not user_in.pin:
+        user_in.pin = "".join([str(random.randint(0, 9)) for _ in range(5)])
+        
     session.add(user_in)
     session.commit()
     session.refresh(user_in)
@@ -102,7 +106,7 @@ async def create_user(user_in: User, admin: User = Depends(get_admin_user), sess
     # Initialize competition status for all active competitions
     comps = session.exec(select(Competition).where(Competition.is_active == True)).all()
     for c in comps:
-        status = UserCompetitionStatus(user_id=user_in.id, competition_id=c.id, is_active=True, paid=False)
+        status = UserCompetitionStatus(user_id=user_in.id, competition_id=c.id, status="PENDING", is_active=False, paid=False)
         session.add(status)
     session.commit()
     
@@ -149,10 +153,10 @@ async def user_re_entry(user_id: int, competition_id: int = 2, admin: User = Dep
     if not current_gw or (not current_gw.re_entry_allowed and not current_gw.is_rollover and not status.eligible_for_rebuy):
         raise HTTPException(status_code=400, detail="Re-entry or Rollover activation not allowed in the current stage")
     
-    if status.is_active:
+    if status.status == "ACTIVE":
         raise HTTPException(status_code=400, detail="User is already active")
     
-    status.is_active = True
+    status.status = "ACTIVE"
     status.eligible_for_rebuy = False
     
     if current_gw.is_rollover:
@@ -161,6 +165,30 @@ async def user_re_entry(user_id: int, competition_id: int = 2, admin: User = Dep
         status.number_of_re_entries += 1
         
     status.paid = True
+    session.add(status)
+    session.commit()
+    session.refresh(status)
+    return status
+
+@app.post("/admin/users/{user_id}/status")
+async def update_user_status(user_id: int, new_status: str, competition_id: int = 2, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    if new_status not in ["PENDING", "ACTIVE", "OUT"]:
+        raise HTTPException(status_code=400, detail="Invalid status")
+        
+    status = session.exec(
+        select(UserCompetitionStatus).where(
+            and_(UserCompetitionStatus.user_id == user_id, UserCompetitionStatus.competition_id == competition_id)
+        )
+    ).first()
+    
+    if not status:
+        raise HTTPException(status_code=404, detail="User status for this competition not found")
+    
+    status.status = new_status
+    status.is_active = (new_status == "ACTIVE")
+    if new_status == "ACTIVE":
+        status.paid = True
+        
     session.add(status)
     session.commit()
     session.refresh(status)
@@ -201,10 +229,11 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
         status = session.exec(select(UserCompetitionStatus).where(
             and_(UserCompetitionStatus.user_id == pick.user_id, UserCompetitionStatus.competition_id == gw.competition_id)
         )).first()
-        if not status or not status.is_active: continue
+        if not status or status.status != "ACTIVE": continue
         
         fixture = next((f for f in fixtures if f.home_team == pick.team_name or f.away_team == pick.team_name), None)
         if fixture and fixture.status == 'FINISHED' and fixture.winner != pick.team_name:
+            status.status = "OUT"
             status.is_active = False
             if comp and comp.code == "WC":
                 if fixture.stage in ['GROUP_STAGE', 'ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINALS']:
@@ -212,7 +241,7 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
             session.add(status)
     
     active_statuses = session.exec(select(UserCompetitionStatus).where(
-        and_(UserCompetitionStatus.competition_id == gw.competition_id, UserCompetitionStatus.is_active == True)
+        and_(UserCompetitionStatus.competition_id == gw.competition_id, UserCompetitionStatus.status == "ACTIVE")
     )).all()
     
     for s in active_statuses:
@@ -220,6 +249,7 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
         if user.is_admin: continue
         user_pick = session.exec(select(Pick).where(and_(Pick.user_id == s.user_id, Pick.gameweek_id == gw.id))).first()
         if not user_pick:
+            s.status = "OUT"
             s.is_active = False
             if comp and comp.code == "WC":
                  if fixtures and fixtures[0].stage in ['GROUP_STAGE', 'ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINALS']:
@@ -276,7 +306,10 @@ async def make_pick(team_name: str, competition_id: int = 2, current_user: User 
         and_(UserCompetitionStatus.user_id == current_user.id, UserCompetitionStatus.competition_id == competition_id)
     )).first()
     
-    if not status or not status.is_active:
+    if not status or status.status == "PENDING":
+        raise HTTPException(status_code=400, detail="You are pending approval for this competition")
+    
+    if status.status == "OUT":
         raise HTTPException(status_code=400, detail="You are eliminated from this competition")
     
     current_gw = session.exec(select(Gameweek).where(
@@ -360,12 +393,17 @@ async def get_public_standings(competition_id: int = 2, session: Session = Depen
         and_(Gameweek.competition_id == competition_id, Gameweek.is_current == True)
     )).first()
     
-    statuses = session.exec(select(UserCompetitionStatus).where(UserCompetitionStatus.competition_id == competition_id)).all()
+    statuses = session.exec(select(UserCompetitionStatus).where(
+        and_(
+            UserCompetitionStatus.competition_id == competition_id,
+            UserCompetitionStatus.status != "PENDING"
+        )
+    )).all()
     status_map = {s.user_id: s for s in statuses}
     
     total_re_entries = sum(s.number_of_re_entries for s in statuses)
     total_rollover_re_entries = sum(getattr(s, 'number_of_rollovers', 0) for s in statuses)
-    paid_entries = sum(1 for s in statuses if s.paid)
+    paid_entries = sum(1 for s in statuses if s.paid or s.status == 'ACTIVE')
     prize_pot = (paid_entries + total_re_entries + total_rollover_re_entries) * 5
     
     results = []
@@ -388,7 +426,8 @@ async def get_public_standings(competition_id: int = 2, session: Session = Depen
         
         results.append({
             "name": u.name,
-            "is_active": status.is_active,
+            "is_active": status.status == "ACTIVE",
+            "is_pending": status.status == "PENDING",
             "eligible_for_rebuy": status.eligible_for_rebuy,
             "current_pick": pick,
             "current_pick_crest": pick_crest,

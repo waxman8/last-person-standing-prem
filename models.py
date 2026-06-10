@@ -16,7 +16,8 @@ class UserCompetitionStatus(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id")
     competition_id: int = Field(foreign_key="competition.id")
-    is_active: bool = Field(default=True)
+    status: str = Field(default="PENDING") # PENDING, ACTIVE, OUT
+    is_active: bool = Field(default=True) # Kept for DB compatibility, but logic uses .status
     eligible_for_rebuy: bool = Field(default=False)
     number_of_re_entries: int = Field(default=0)
     number_of_rollovers: int = Field(default=0)
@@ -28,7 +29,7 @@ class UserCompetitionStatus(SQLModel, table=True):
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
-    pin: str = Field(index=True)  # 5 digit PIN
+    pin: Optional[str] = Field(default=None, index=True)  # 5 digit PIN
     is_active: bool = Field(default=True) # Site-wide active status
     is_admin: bool = Field(default=False)
     
