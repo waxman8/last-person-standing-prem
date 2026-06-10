@@ -394,10 +394,7 @@ async def get_public_standings(competition_id: int = 2, session: Session = Depen
     )).first()
     
     statuses = session.exec(select(UserCompetitionStatus).where(
-        and_(
-            UserCompetitionStatus.competition_id == competition_id,
-            UserCompetitionStatus.status != "PENDING"
-        )
+        UserCompetitionStatus.competition_id == competition_id
     )).all()
     status_map = {s.user_id: s for s in statuses}
     
