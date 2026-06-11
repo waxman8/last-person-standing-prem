@@ -323,7 +323,9 @@ async def make_pick(team_name: str, competition_id: int = 2, current_user: User 
     )).first()
     
     if not current_gw: raise HTTPException(status_code=400, detail="No active stage")
-    if datetime.now(timezone.utc).replace(tzinfo=None) > current_gw.deadline:
+    
+    is_group_stage = current_gw.number <= 3
+    if not is_group_stage and datetime.now(timezone.utc).replace(tzinfo=None) > current_gw.deadline:
         raise HTTPException(status_code=400, detail="Deadline passed")
     
     comp = session.get(Competition, competition_id)
@@ -370,6 +372,15 @@ async def make_pick(team_name: str, competition_id: int = 2, current_user: User 
     ))).first()
     
     if existing_pick:
+        # If user is changing their pick, check if the match for their current pick has already started
+        old_fixture = session.exec(select(Fixture).where(and_(
+            Fixture.gameweek_id == current_gw.id,
+            (Fixture.home_team == existing_pick.team_name) | (Fixture.away_team == existing_pick.team_name)
+        ))).first()
+        
+        if old_fixture and datetime.now(timezone.utc).replace(tzinfo=None) > old_fixture.kickoff_time:
+            raise HTTPException(status_code=400, detail=f"Cannot change pick: Match for your current pick ({existing_pick.team_name}) has already started")
+
         existing_pick.team_name = team_name
         existing_pick.timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
     else:

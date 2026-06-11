@@ -101,25 +101,30 @@
                             </div>
                             <div>
                                 <p class="text-3xl font-black">{{ myCurrentPick }}</p>
-                                <p class="text-blue-100 opacity-75">Good luck!</p>
+                                <p v-if="isPickLocked" class="text-red-200 text-xs font-bold uppercase tracking-tighter">Match started - Pick locked</p>
+                                <p v-else class="text-blue-100 opacity-75">Good luck!</p>
                             </div>
                         </div>
-                        <button @click="showPickForm = !showPickForm" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-bold transition">
+                        <button v-if="!isPickLocked" @click="showPickForm = !showPickForm" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-bold transition">
                             Change Pick
                         </button>
                     </div>
                 </div>
 
                 <!-- Show form if no pick OR if user wants to change -->
-                <div v-if="!myCurrentPick || showPickForm" class="bg-white p-6 rounded-lg shadow-md mt-4 transition-all duration-300 border-t-4 border-blue-600">
+                <div v-if="(!myCurrentPick || showPickForm) && !isPickLocked" class="bg-white p-6 rounded-lg shadow-md mt-4 transition-all duration-300 border-t-4 border-blue-600">
                     <div class="flex justify-between items-start mb-4">
                         <h3 class="text-xl font-bold">Make Your Pick</h3>
                     </div>
-                    <div v-if="fixtures.length > 0">
-                        <p class="text-sm text-gray-500 mb-4">Select one team to win. Deadline: {{ formatDate(fixtures[0].gameweek.deadline) }}</p>
+                    <div v-if="availableFixtures.length > 0">
+                        <p class="text-sm text-gray-500 mb-4">
+                            Select one team to win. 
+                            <span v-if="isGroupStage" class="font-bold text-blue-600">Deadline: Match kickoff</span>
+                            <span v-else>Deadline: {{ formatDate(fixtures[0].gameweek.deadline) }}</span>
+                        </p>
                         <select v-model="selectedTeam" class="w-full border p-3 rounded mb-4">
                             <option value="">-- Choose a Team --</option>
-                            <template v-for="f in fixtures">
+                            <template v-for="f in availableFixtures">
                                 <option :value="f.home_team">{{ f.home_team }} (vs {{ f.away_team }}) - {{ f.stage }}</option>
                                 <option :value="f.away_team">{{ f.away_team }} (vs {{ f.home_team }}) - {{ f.stage }}</option>
                             </template>
@@ -249,6 +254,31 @@
                 },
                 myCurrentPickCrest() {
                     return this.currentStanding ? this.currentStanding.current_pick_crest : null;
+                },
+                isGroupStage() {
+                    if (!this.fixtures || this.fixtures.length === 0) return false;
+                    return this.fixtures[0].gameweek.number <= 3;
+                },
+                availableFixtures() {
+                    if (!this.fixtures) return [];
+                    if (!this.isGroupStage) return this.fixtures;
+                    
+                    const now = new Date();
+                    return this.fixtures.filter(f => {
+                        // Keep fixtures that haven't started yet
+                        return new Date(f.kickoff_time) > now;
+                    });
+                },
+                isPickLocked() {
+                    if (!this.myCurrentPick || !this.fixtures) return false;
+                    if (!this.isGroupStage) {
+                        // In knockouts, entire round is locked if deadline passed
+                        return new Date() > new Date(this.fixtures[0].gameweek.deadline);
+                    }
+                    // In group stages, only lock if the specific match has started
+                    const currentFixture = this.fixtures.find(f => f.home_team === this.myCurrentPick || f.away_team === this.myCurrentPick);
+                    if (!currentFixture) return false;
+                    return new Date() > new Date(currentFixture.kickoff_time);
                 },
                 filteredStandings() {
                     if (!this.standings) return [];
