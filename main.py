@@ -392,24 +392,22 @@ async def get_public_gameweeks(competition_id: int = 2, session: Session = Depen
 async def get_public_fixtures(gw_id: int, session: Session = Depends(get_session)):
     return session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id).order_by(Fixture.kickoff_time)).all()
 
-@app.get("/public/standings")
-async def get_public_standings(competition_id: int = 2, session: Session = Depends(get_session)):
+def _get_standings_data(competition_id: int, session: Session, include_pending: bool = False):
     users = session.exec(select(User).where(User.is_admin == False)).all()
     current_gw = session.exec(select(Gameweek).where(
         and_(Gameweek.competition_id == competition_id, Gameweek.is_current == True)
     )).first()
     
-    statuses = session.exec(
-        select(UserCompetitionStatus)
-        .join(User)
-        .where(
-            and_(
-                UserCompetitionStatus.competition_id == competition_id,
-                User.is_admin == False,
-                UserCompetitionStatus.status != 'PENDING'
-            )
+    query = select(UserCompetitionStatus).join(User).where(
+        and_(
+            UserCompetitionStatus.competition_id == competition_id,
+            User.is_admin == False
         )
-    ).all()
+    )
+    if not include_pending:
+        query = query.where(UserCompetitionStatus.status != 'PENDING')
+        
+    statuses = session.exec(query).all()
     status_map = {s.user_id: s for s in statuses}
     
     total_re_entries = sum(s.number_of_re_entries for s in statuses)
@@ -453,6 +451,14 @@ async def get_public_standings(competition_id: int = 2, session: Session = Depen
         "total_rollover_re_entries": total_rollover_re_entries,
         "prize_pot": prize_pot
     }
+
+@app.get("/public/standings")
+async def get_public_standings(competition_id: int = 2, session: Session = Depends(get_session)):
+    return _get_standings_data(competition_id, session, include_pending=False)
+
+@app.get("/admin/standings")
+async def get_admin_standings(competition_id: int = 2, admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    return _get_standings_data(competition_id, session, include_pending=True)
 
 @app.get("/history")
 async def get_user_history(competition_id: int = 2, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):

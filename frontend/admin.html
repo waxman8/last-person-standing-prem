@@ -315,7 +315,7 @@
                     const gwRes = await fetch(`/admin/gameweeks?competition_id=${this.selectedCompId}`, { headers });
                     this.gameweeks = await gwRes.json();
                     
-                    const standRes = await fetch(`/public/standings?competition_id=${this.selectedCompId}`, { headers });
+                    const standRes = await fetch(`/admin/standings?competition_id=${this.selectedCompId}`, { headers });
                     const standData = await standRes.json();
                     this.standings = standData.standings;
 
