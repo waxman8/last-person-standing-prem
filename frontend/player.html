@@ -223,6 +223,7 @@
                     user: JSON.parse(localStorage.getItem('user_profile') || '{}'),
                     competitions: [],
                     selectedCompId: 1,
+                    myStatus: null,
                     fixtures: [],
                     standings: [],
                     history: [],
@@ -233,27 +234,23 @@
                 }
             },
             computed: {
-                currentStanding() {
-                    if (!this.standings || !this.user.name) return null;
-                    return this.standings.find(p => p.name === this.user.name);
-                },
                 isUserActive() {
-                    return this.currentStanding ? this.currentStanding.is_active : false;
+                    return this.myStatus ? this.myStatus.is_active : false;
                 },
                 isUserPending() {
-                    return this.currentStanding ? this.currentStanding.is_pending : false;
+                    return this.myStatus ? this.myStatus.is_pending : false;
                 },
                 eligibleForRebuy() {
-                    return this.currentStanding ? this.currentStanding.eligible_for_rebuy : false;
+                    return this.myStatus ? this.myStatus.eligible_for_rebuy : false;
                 },
                 isUserOut() {
-                    return this.currentStanding ? (!this.currentStanding.is_active && !this.currentStanding.is_pending) : false;
+                    return this.myStatus ? (!this.myStatus.is_active && !this.myStatus.is_pending) : false;
                 },
                 myCurrentPick() {
-                    return this.currentStanding ? this.currentStanding.current_pick : null;
+                    return this.myStatus ? this.myStatus.current_pick : null;
                 },
                 myCurrentPickCrest() {
-                    return this.currentStanding ? this.currentStanding.current_pick_crest : null;
+                    return this.myStatus ? this.myStatus.current_pick_crest : null;
                 },
                 isGroupStage() {
                     if (!this.fixtures || this.fixtures.length === 0) return false;
@@ -334,6 +331,9 @@
                     
                     const fixRes = await fetch(`/fixtures?competition_id=${this.selectedCompId}`, { headers });
                     this.fixtures = await fixRes.json();
+
+                    const statusRes = await fetch(`/competition-status?competition_id=${this.selectedCompId}`, { headers });
+                    this.myStatus = await statusRes.json();
 
                     const standRes = await fetch(`/public/standings?competition_id=${this.selectedCompId}`, { headers });
                     const standData = await standRes.json();

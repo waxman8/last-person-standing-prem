@@ -395,6 +395,47 @@ async def get_admin_fixtures(gw_id: int, admin: User = Depends(get_admin_user), 
     logger.info(f"Admin fetching fixtures for gameweek {gw_id}")
     return session.exec(select(Fixture).where(Fixture.gameweek_id == gw_id).order_by(Fixture.kickoff_time)).all()
 
+@app.get("/competition-status")
+async def get_competition_status(competition_id: int = 2, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    status = session.exec(select(UserCompetitionStatus).where(
+        and_(UserCompetitionStatus.user_id == current_user.id, UserCompetitionStatus.competition_id == competition_id)
+    )).first()
+    
+    if not status:
+        # If no status exists, return a default pending-like object or 404
+        # For this app, every user should have a status created at registration
+        raise HTTPException(status_code=404, detail="Status not found for this competition")
+    
+    # We also want to include if they have a pick for the current GW
+    current_gw = session.exec(select(Gameweek).where(
+        and_(Gameweek.competition_id == competition_id, Gameweek.is_current == True)
+    )).first()
+    
+    pick = None
+    pick_crest = None
+    if current_gw:
+        pick_obj = session.exec(select(Pick).where(and_(Pick.user_id == current_user.id, Pick.gameweek_id == current_gw.id))).first()
+        if pick_obj:
+            pick = pick_obj.team_name
+            fix_for_pick = session.exec(select(Fixture).where(and_(
+                Fixture.gameweek_id == current_gw.id,
+                (Fixture.home_team == pick) | (Fixture.away_team == pick)
+            ))).first()
+            if fix_for_pick:
+                pick_crest = fix_for_pick.home_team_crest if fix_for_pick.home_team == pick else fix_for_pick.away_team_crest
+
+    return {
+        "status": status.status,
+        "is_active": status.status == "ACTIVE",
+        "is_pending": status.status == "PENDING",
+        "eligible_for_rebuy": status.eligible_for_rebuy,
+        "paid": status.paid,
+        "current_pick": pick,
+        "current_pick_crest": pick_crest,
+        "re_entries": status.number_of_re_entries,
+        "rollovers": getattr(status, 'number_of_rollovers', 0)
+    }
+
 @app.get("/public/gameweeks")
 async def get_public_gameweeks(competition_id: int = 2, session: Session = Depends(get_session)):
     return session.exec(select(Gameweek).where(Gameweek.competition_id == competition_id).order_by(Gameweek.number)).all()
