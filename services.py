@@ -135,6 +135,14 @@ def stage_to_number(stage: str) -> int:
     }
     return mapping.get(stage, 10)
 
+def check_rebuy_eligibility(competition_code: str, stage: str) -> bool:
+    """Centralized logic for competition-specific re-buy eligibility."""
+    if competition_code == "WC":
+        # Re-buy allowed for Group Stage, R32, and R16 (to enter R8)
+        # Rule: No re-buy after R8 (Quarter Finals)
+        return stage in ['GROUP_STAGE', 'ROUND_OF_32', 'ROUND_OF_16']
+    return False
+
 def process_live_results(session, competition):
     """Processes picks for the current gameweek of a competition."""
     current_gw = session.exec(
@@ -171,11 +179,9 @@ def process_live_results(session, competition):
         if fixture and fixture.status == 'FINISHED':
             if fixture.winner != pick.team_name:
                 status.is_active = False
-                # Eligibility for re-buy (WC rules: MD1-3, R32, R16, R8)
-                if competition.code == "WC":
-                    # R8 is QUARTER_FINALS
-                    if fixture.stage in ['GROUP_STAGE', 'ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINALS']:
-                        status.eligible_for_rebuy = True
+                # Eligibility for re-buy based on centralized rules
+                if check_rebuy_eligibility(competition.code, fixture.stage):
+                    status.eligible_for_rebuy = True
                 session.add(status)
     
     session.commit()

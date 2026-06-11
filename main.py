@@ -14,7 +14,7 @@ from sqlmodel import select, and_, desc
 from database import init_db, get_session
 from models import User, Gameweek, Fixture, Pick, Competition, UserCompetitionStatus
 import api_client
-from services import sync_fixtures_logic
+from services import sync_fixtures_logic, check_rebuy_eligibility
 from scheduler import fixture_scheduler_worker
 
 # Security Constants
@@ -243,9 +243,8 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
         if fixture and fixture.status == 'FINISHED' and fixture.winner != pick.team_name:
             status.status = "OUT"
             status.is_active = False
-            if comp and comp.code == "WC":
-                if fixture.stage in ['GROUP_STAGE', 'ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINALS']:
-                    status.eligible_for_rebuy = True
+            if comp and check_rebuy_eligibility(comp.code, fixture.stage):
+                status.eligible_for_rebuy = True
             session.add(status)
     
     active_statuses = session.exec(select(UserCompetitionStatus).where(
@@ -259,9 +258,8 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
         if not user_pick:
             s.status = "OUT"
             s.is_active = False
-            if comp and comp.code == "WC":
-                 if fixtures and fixtures[0].stage in ['GROUP_STAGE', 'ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINALS']:
-                     s.eligible_for_rebuy = True
+            if comp and fixtures and check_rebuy_eligibility(comp.code, fixtures[0].stage):
+                s.eligible_for_rebuy = True
             session.add(s)
     
     gw.is_processed = True
