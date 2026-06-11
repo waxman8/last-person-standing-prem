@@ -401,14 +401,22 @@ async def get_public_standings(competition_id: int = 2, session: Session = Depen
         and_(Gameweek.competition_id == competition_id, Gameweek.is_current == True)
     )).first()
     
-    statuses = session.exec(select(UserCompetitionStatus).where(
-        UserCompetitionStatus.competition_id == competition_id
-    )).all()
+    statuses = session.exec(
+        select(UserCompetitionStatus)
+        .join(User)
+        .where(
+            and_(
+                UserCompetitionStatus.competition_id == competition_id,
+                User.is_admin == False,
+                UserCompetitionStatus.status != 'PENDING'
+            )
+        )
+    ).all()
     status_map = {s.user_id: s for s in statuses}
     
     total_re_entries = sum(s.number_of_re_entries for s in statuses)
     total_rollover_re_entries = sum(getattr(s, 'number_of_rollovers', 0) for s in statuses)
-    paid_entries = sum(1 for s in statuses if s.paid or s.status == 'ACTIVE')
+    paid_entries = sum(1 for s in statuses if s.paid or s.status in ['ACTIVE', 'OUT'])
     prize_pot = (paid_entries + total_re_entries + total_rollover_re_entries) * 5
     
     results = []
