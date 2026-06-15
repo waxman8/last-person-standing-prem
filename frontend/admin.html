@@ -107,9 +107,15 @@
                         <div class="p-4 border rounded bg-white shadow-sm">
                             <h3 class="font-bold mb-1 text-blue-800">API Sync</h3>
                             <p class="text-xs text-gray-500 mb-3">Fetch fixtures and live scores for all competitions.</p>
-                            <button @click="syncFixtures" :disabled="syncing" class="w-full bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700 disabled:opacity-50 text-sm">
-                                {{ syncing ? 'Syncing...' : 'Sync Live Results' }}
-                            </button>
+                            <div class="flex space-x-2">
+                                <button @click="syncFixtures" :disabled="syncing" class="flex-1 bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700 disabled:opacity-50 text-sm">
+                                    {{ syncing ? 'Syncing...' : 'Sync Results' }}
+                                </button>
+                                <button @click="forceStatusSync" :disabled="syncing" class="bg-amber-500 text-white p-2 rounded hover:bg-amber-600 disabled:opacity-50" title="Force Player Status Sync">
+                                    <span v-if="syncing">...</span>
+                                    <span v-else>🔄</span>
+                                </button>
+                            </div>
                         </div>
                         <div class="p-4 border rounded bg-yellow-50 shadow-sm flex flex-col justify-between">
                             <div>
@@ -386,6 +392,15 @@
                 async syncFixtures() {
                     this.syncing = true;
                     await fetch('/admin/sync-fixtures', { method: 'POST', headers: { 'Authorization': `Bearer ${this.token}` } });
+                    await this.loadData();
+                    this.syncing = false;
+                },
+                async forceStatusSync() {
+                    if (!confirm("Retroactively update all player statuses for finished matches in the current stage?")) return;
+                    this.syncing = true;
+                    const res = await fetch('/admin/force-status-sync', { method: 'POST', headers: { 'Authorization': `Bearer ${this.token}` } });
+                    const data = await res.json();
+                    alert(data.message);
                     await this.loadData();
                     this.syncing = false;
                 },

@@ -14,7 +14,7 @@ from sqlmodel import select, and_, desc
 from database import init_db, get_session
 from models import User, Gameweek, Fixture, Pick, Competition, UserCompetitionStatus
 import api_client
-from services import sync_fixtures_logic, check_rebuy_eligibility
+from services import sync_fixtures_logic, check_rebuy_eligibility, retroactive_status_sync
 from scheduler import fixture_scheduler_worker
 
 # Security Constants
@@ -217,6 +217,15 @@ async def sync_fixtures(admin: User = Depends(get_admin_user), session: Session 
         return sync_fixtures_logic(session)
     except Exception as e:
         logger.error(f"Sync error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/admin/force-status-sync")
+async def force_status_sync(admin: User = Depends(get_admin_user), session: Session = Depends(get_session)):
+    try:
+        updated_count = retroactive_status_sync(session)
+        return {"message": f"Successfully updated {updated_count} player statuses."}
+    except Exception as e:
+        logger.error(f"Force status sync error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/admin/apply-results/{gw_id}")

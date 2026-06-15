@@ -67,7 +67,7 @@ def sync_fixtures_logic(session):
                     logger.info(f"TEAM_MAPPING: {home_team} -> {home_team_data.get('crest')}")
                 if away_team:
                     logger.info(f"TEAM_MAPPING: {away_team} -> {away_team_data.get('crest')}")
-
+                
                 if not home_team or not away_team:
                     logger.warning(f"Skipping fixture {m['id']} as teams are not yet determined")
                     continue
@@ -186,3 +186,59 @@ def process_live_results(session, competition):
                 session.add(status)
     
     session.commit()
+
+def retroactive_status_sync(session):
+    """Retroactively updates player statuses for all finished matches in current gameweeks."""
+    competitions = session.exec(select(Competition).where(Competition.is_active == True)).all()
+    count = 0
+    for comp in competitions:
+        current_gw = session.exec(
+            select(Gameweek).where(
+                and_(Gameweek.competition_id == comp.id, Gameweek.is_current == True)
+            )
+        ).first()
+        
+        if not current_gw:
+            continue
+
+        picks = session.exec(select(Pick).where(Pick.gameweek_id == current_gw.id)).all()
+        for pick in picks:
+            status = session.exec(
+                select(UserCompetitionStatus).where(
+                    and_(
+                        UserCompetitionStatus.user_id == pick.user_id,
+                        UserCompetitionStatus.competition_id == comp.id
+                    )
+                )
+            ).first()
+            
+            if not status:
+                continue
+            
+            fixture = session.exec(select(Fixture).where(
+                and_(
+                    Fixture.gameweek_id == current_gw.id,
+                    (Fixture.home_team == pick.team_name) | (Fixture.away_team == pick.team_name)
+                )
+            )).first()
+            
+            if fixture and fixture.status == 'FINISHED':
+                if fixture.winner != pick.team_name:
+                    if status.status != 'OUT':
+                        status.status = 'OUT'
+                        status.is_active = False
+                        if check_rebuy_eligibility(comp.code, fixture.stage):
+                            status.eligible_for_rebuy = True
+                        session.add(status)
+                        count += 1
+                else:
+                    # If they won, make sure they are ACTIVE (in case of manual error override)
+                    if status.status == 'OUT':
+                        status.status = 'ACTIVE'
+                        status.is_active = True
+                        status.eligible_for_rebuy = False
+                        session.add(status)
+                        count += 1
+    
+    session.commit()
+    return count
