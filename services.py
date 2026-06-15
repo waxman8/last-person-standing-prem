@@ -178,6 +178,7 @@ def process_live_results(session, competition):
         
         if fixture and fixture.status == 'FINISHED':
             if fixture.winner != pick.team_name:
+                status.status = 'OUT'
                 status.is_active = False
                 # Eligibility for re-buy based on centralized rules
                 if check_rebuy_eligibility(competition.code, fixture.stage):
