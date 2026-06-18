@@ -178,6 +178,7 @@ async def user_re_entry(user_id: int, competition_id: int = 2, admin: User = Dep
         return {"message": "User eliminated in current round. Re-entry has been queued and they will be auto-activated when the next round starts."}
 
     status.status = "ACTIVE"
+    status.is_active = True
     status.eligible_for_rebuy = False
     status.last_re_entry_gw_id = current_gw.id
     status.has_paid_reentry = False # Clear any queue
