@@ -192,6 +192,10 @@
                                     <span v-if="player.is_active" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-black bg-green-100 text-green-800 uppercase tracking-tighter">
                                         Active
                                     </span>
+                                    <span v-else-if="player.is_queued" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-black bg-orange-100 text-orange-800 uppercase tracking-tighter">
+                                        <span class="w-1.5 h-1.5 bg-orange-500 rounded-full mr-1 animate-pulse"></span>
+                                        Paid
+                                    </span>
                                     <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-black bg-gray-100 text-gray-400 uppercase tracking-tighter">
                                         Out
                                     </span>

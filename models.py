@@ -21,6 +21,8 @@ class UserCompetitionStatus(SQLModel, table=True):
     eligible_for_rebuy: bool = Field(default=False)
     number_of_re_entries: int = Field(default=0)
     number_of_rollovers: int = Field(default=0)
+    last_re_entry_gw_id: Optional[int] = Field(default=0)
+    has_paid_reentry: bool = Field(default=False)
     paid: bool = Field(default=False)
 
     user: "User" = Relationship(back_populates="competition_statuses")

@@ -164,8 +164,23 @@ async def user_re_entry(user_id: int, competition_id: int = 2, admin: User = Dep
     if status.status == "ACTIVE":
         raise HTTPException(status_code=400, detail="User is already active")
     
+    # Validation: Ensure user was not eliminated in the current gameweek
+    # If they have a pick in the current_gw and are OUT, they just lost
+    last_pick = session.exec(
+        select(Pick).where(and_(Pick.user_id == user_id, Pick.gameweek_id == current_gw.id))
+    ).first()
+    
+    if last_pick and status.status == "OUT":
+        # Queue the re-entry instead of blocking
+        status.has_paid_reentry = True
+        session.add(status)
+        session.commit()
+        return {"message": "User eliminated in current round. Re-entry has been queued and they will be auto-activated when the next round starts."}
+
     status.status = "ACTIVE"
     status.eligible_for_rebuy = False
+    status.last_re_entry_gw_id = current_gw.id
+    status.has_paid_reentry = False # Clear any queue
     
     if current_gw.is_rollover:
         status.number_of_rollovers += 1
@@ -192,6 +207,14 @@ async def update_user_status(user_id: int, new_status: str, competition_id: int 
     if not status:
         raise HTTPException(status_code=404, detail="User status for this competition not found")
     
+    # Safety Check: Do not allow manually setting an 'OUT' player to 'ACTIVE'
+    # This ensures they must use the 'Re-entry' button to properly increment counters and reset history.
+    if new_status == "ACTIVE" and status.status == "OUT":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot manually set an 'OUT' player to 'ACTIVE'. Please use the 'Re-entry' (circle arrow) button to ensure the prize pot and history reset are handled correctly."
+        )
+
     status.status = new_status
     status.is_active = (new_status == "ACTIVE")
     if new_status == "ACTIVE":
@@ -282,6 +305,22 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
         gw.is_current = False
         next_gw.is_current = True
         session.add(next_gw)
+        
+        # Auto-activate queued re-entries for the new round
+        queued_users = session.exec(select(UserCompetitionStatus).where(and_(
+            UserCompetitionStatus.competition_id == gw.competition_id,
+            UserCompetitionStatus.has_paid_reentry == True
+        ))).all()
+        
+        for qu in queued_users:
+            qu.status = "ACTIVE"
+            qu.is_active = True
+            qu.eligible_for_rebuy = False
+            qu.last_re_entry_gw_id = next_gw.id
+            qu.has_paid_reentry = False
+            qu.number_of_re_entries += 1
+            qu.paid = True
+            session.add(qu)
 
     session.commit()
     return {"message": f"Gameweek {gw.number} processed successfully."}
@@ -341,11 +380,15 @@ async def make_pick(team_name: str, competition_id: int = 2, current_user: User 
     sample_fix = session.exec(select(Fixture).where(Fixture.gameweek_id == current_gw.id)).first()
     is_knockout = sample_fix and sample_fix.stage not in ['REGULAR', 'GROUP_STAGE']
 
-    # Determine rollover context: only check picks after the most recent rollover
+    # Determine history threshold: individual re-entry or global rollover
+    user_re_entry_id = status.last_re_entry_gw_id or 0
     latest_rollover = session.exec(select(Gameweek).where(
         and_(Gameweek.competition_id == competition_id, Gameweek.is_rollover == True)
     ).order_by(desc(Gameweek.id))).first()
     rollover_threshold_id = latest_rollover.id if latest_rollover else 0
+    
+    # The effective threshold is the most recent of the two
+    effective_threshold_id = max(user_re_entry_id, rollover_threshold_id)
 
     if not is_knockout or (comp and comp.type == 'LEAGUE'):
         prev_pick = session.exec(select(Pick).where(and_(
@@ -353,7 +396,7 @@ async def make_pick(team_name: str, competition_id: int = 2, current_user: User 
             Pick.competition_id == competition_id,
             Pick.team_name == team_name,
             Pick.gameweek_id != current_gw.id,
-            Pick.gameweek_id >= rollover_threshold_id
+            Pick.gameweek_id >= effective_threshold_id
         ))).first()
         
         if prev_pick:
@@ -442,7 +485,8 @@ async def get_competition_status(competition_id: int = 2, current_user: User = D
         "current_pick": pick,
         "current_pick_crest": pick_crest,
         "re_entries": status.number_of_re_entries,
-        "rollovers": getattr(status, 'number_of_rollovers', 0)
+        "rollovers": getattr(status, 'number_of_rollovers', 0),
+        "is_queued": getattr(status, 'has_paid_reentry', False)
     }
 
 @app.get("/public/gameweeks")
@@ -472,9 +516,10 @@ def _get_standings_data(competition_id: int, session: Session, include_pending: 
     status_map = {s.user_id: s for s in statuses}
     
     total_re_entries = sum(s.number_of_re_entries for s in statuses)
+    total_queued_re_entries = sum(1 for s in statuses if getattr(s, 'has_paid_reentry', False))
     total_rollover_re_entries = sum(getattr(s, 'number_of_rollovers', 0) for s in statuses)
     paid_entries = sum(1 for s in statuses if s.paid or s.status in ['ACTIVE', 'OUT'])
-    prize_pot = (paid_entries + total_re_entries + total_rollover_re_entries) * 5
+    prize_pot = (paid_entries + total_re_entries + total_queued_re_entries + total_rollover_re_entries) * 5
     
     results = []
     for u in users:
@@ -496,8 +541,10 @@ def _get_standings_data(competition_id: int, session: Session, include_pending: 
         
         results.append({
             "name": u.name,
+            "id": u.id,
             "is_active": status.status == "ACTIVE",
             "is_pending": status.status == "PENDING",
+            "is_queued": getattr(status, 'has_paid_reentry', False),
             "eligible_for_rebuy": status.eligible_for_rebuy,
             "current_pick": pick,
             "current_pick_crest": pick_crest,

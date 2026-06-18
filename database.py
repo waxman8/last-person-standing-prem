@@ -31,6 +31,20 @@ def run_migrations():
                 conn.execute(text("UPDATE usercompetitionstatus SET status = 'OUT' WHERE is_active = 0"))
             print("Migration: Added status to usercompetitionstatus table")
 
+        # Check for UserCompetitionStatus.last_re_entry_gw_id
+        cursor = conn.execute(text("PRAGMA table_info(usercompetitionstatus)"))
+        columns = [row[1] for row in cursor.fetchall()]
+        if "last_re_entry_gw_id" not in columns:
+            conn.execute(text("ALTER TABLE usercompetitionstatus ADD COLUMN last_re_entry_gw_id INTEGER DEFAULT 0"))
+            print("Migration: Added last_re_entry_gw_id to usercompetitionstatus table")
+
+        # Check for UserCompetitionStatus.has_paid_reentry
+        cursor = conn.execute(text("PRAGMA table_info(usercompetitionstatus)"))
+        columns = [row[1] for row in cursor.fetchall()]
+        if "has_paid_reentry" not in columns:
+            conn.execute(text("ALTER TABLE usercompetitionstatus ADD COLUMN has_paid_reentry BOOLEAN DEFAULT 0"))
+            print("Migration: Added has_paid_reentry to usercompetitionstatus table")
+
         conn.commit()
 
 def init_db():
