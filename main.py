@@ -373,9 +373,9 @@ async def make_pick(team_name: str, competition_id: int = 2, current_user: User 
     
     if not current_gw: raise HTTPException(status_code=400, detail="No active stage")
     
-    is_group_stage = current_gw.number <= 3
-    if not is_group_stage and datetime.now(timezone.utc).replace(tzinfo=None) > current_gw.deadline:
-        raise HTTPException(status_code=400, detail="Deadline passed")
+    # is_group_stage = current_gw.number <= 3
+    # if not is_group_stage and datetime.now(timezone.utc).replace(tzinfo=None) > current_gw.deadline:
+    #    raise HTTPException(status_code=400, detail="Deadline passed")
     
     comp = session.get(Competition, competition_id)
     sample_fix = session.exec(select(Fixture).where(Fixture.gameweek_id == current_gw.id)).first()
