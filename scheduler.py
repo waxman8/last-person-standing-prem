@@ -32,7 +32,7 @@ async def fixture_scheduler_worker():
                 sync_fixtures_logic(session)
                 
                 # Step 2: Determine next schedule
-                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                now = datetime.now(timezone.utc)
                 
                 # Rule B: Check if any match is currently "on"
                 # "On" means it has started and it's not finished/postponed/cancelled

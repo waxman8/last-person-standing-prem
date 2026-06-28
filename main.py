@@ -57,7 +57,7 @@ async def on_startup():
 # --- Auth Helpers ---
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -374,7 +374,7 @@ async def make_pick(team_name: str, competition_id: int = 2, current_user: User 
     if not current_gw: raise HTTPException(status_code=400, detail="No active stage")
     
     # is_group_stage = current_gw.number <= 3
-    # if not is_group_stage and datetime.now(timezone.utc).replace(tzinfo=None) > current_gw.deadline:
+    # if not is_group_stage and datetime.now(timezone.utc) > current_gw.deadline:
     #    raise HTTPException(status_code=400, detail="Deadline passed")
     
     comp = session.get(Competition, competition_id)
@@ -417,7 +417,7 @@ async def make_pick(team_name: str, competition_id: int = 2, current_user: User 
     ))).first()
     
     if not fixture: raise HTTPException(status_code=400, detail="Invalid team selection")
-    if datetime.now(timezone.utc).replace(tzinfo=None) > fixture.kickoff_time:
+    if datetime.now(timezone.utc) > fixture.kickoff_time:
         raise HTTPException(status_code=400, detail=f"Match for {team_name} has already started")
 
     existing_pick = session.exec(select(Pick).where(and_(
@@ -431,11 +431,11 @@ async def make_pick(team_name: str, competition_id: int = 2, current_user: User 
             (Fixture.home_team == existing_pick.team_name) | (Fixture.away_team == existing_pick.team_name)
         ))).first()
         
-        if old_fixture and datetime.now(timezone.utc).replace(tzinfo=None) > old_fixture.kickoff_time:
+        if old_fixture and datetime.now(timezone.utc) > old_fixture.kickoff_time:
             raise HTTPException(status_code=400, detail=f"Cannot change pick: Match for your current pick ({existing_pick.team_name}) has already started")
 
         existing_pick.team_name = team_name
-        existing_pick.timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
+        existing_pick.timestamp = datetime.now(timezone.utc)
     else:
         new_pick = Pick(user_id=current_user.id, gameweek_id=current_gw.id, competition_id=competition_id, team_name=team_name)
         session.add(new_pick)

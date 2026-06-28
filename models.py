@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import List, Optional
+from sqlalchemy import Column, DateTime
 from sqlmodel import Field, Relationship, SQLModel
 
 class Competition(SQLModel, table=True):
@@ -42,7 +43,7 @@ class Gameweek(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     number: int  # The matchday number or stage sequence
     competition_id: int = Field(foreign_key="competition.id", default=2)
-    deadline: datetime
+    deadline: datetime = Field(sa_column=Column(DateTime(timezone=True)))
     is_current: bool = Field(default=False)
     is_processed: bool = Field(default=False)
     re_entry_allowed: bool = Field(default=False)
@@ -60,7 +61,7 @@ class Fixture(SQLModel, table=True):
     away_team: Optional[str] = None
     home_team_crest: Optional[str] = None
     away_team_crest: Optional[str] = None
-    kickoff_time: datetime
+    kickoff_time: datetime = Field(sa_column=Column(DateTime(timezone=True)))
     status: str  # SCHEDULED, TIMED, IN_PLAY, FINISHED, POSTPONED
     stage: str = Field(default="REGULAR") # MD1, MD2, MD3, R32, R16, QF, SF, FINAL
     home_score: Optional[int] = None
@@ -75,7 +76,10 @@ class Pick(SQLModel, table=True):
     gameweek_id: int = Field(foreign_key="gameweek.id")
     competition_id: int = Field(foreign_key="competition.id", default=2)
     team_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    timestamp: datetime = Field(
+        sa_column=Column(DateTime(timezone=True)),
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
 
     user: User = Relationship(back_populates="picks")
     gameweek: Gameweek = Relationship(back_populates="picks")

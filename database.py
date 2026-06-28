@@ -45,6 +45,12 @@ def run_migrations():
             conn.execute(text("ALTER TABLE usercompetitionstatus ADD COLUMN has_paid_reentry BOOLEAN DEFAULT 0"))
             print("Migration: Added has_paid_reentry to usercompetitionstatus table")
 
+        # Migration: Ensure all datetimes are stored with UTC offset
+        conn.execute(text("UPDATE gameweek SET deadline = deadline || '+00:00' WHERE deadline NOT LIKE '%+00:00' AND deadline NOT LIKE '%Z'"))
+        conn.execute(text("UPDATE fixture SET kickoff_time = kickoff_time || '+00:00' WHERE kickoff_time NOT LIKE '%+00:00' AND kickoff_time NOT LIKE '%Z'"))
+        conn.execute(text("UPDATE pick SET timestamp = timestamp || '+00:00' WHERE timestamp NOT LIKE '%+00:00' AND timestamp NOT LIKE '%Z'"))
+        print("Migration: Appended UTC offset to existing naive datetimes")
+
         conn.commit()
 
 def init_db():

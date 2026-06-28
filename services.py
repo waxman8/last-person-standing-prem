@@ -35,7 +35,7 @@ def sync_fixtures_logic(session):
                 # For simplicity, we'll use a sequence or map stages to numbers
                 gw_number = matchday if matchday else stage_to_number(stage)
                 
-                kickoff = datetime.fromisoformat(m['utcDate'].replace('Z', '+00:00')).replace(tzinfo=None)
+                kickoff = datetime.fromisoformat(m['utcDate'].replace('Z', '+00:00'))
                 
                 # Upsert Gameweek
                 gw = session.exec(
