@@ -275,7 +275,6 @@
                 },
                 availableFixtures() {
                     if (!this.fixtures) return [];
-                    if (!this.isGroupStage) return this.fixtures;
                     
                     const now = new Date();
                     return this.fixtures.filter(f => {
@@ -285,11 +284,8 @@
                 },
                 isPickLocked() {
                     if (!this.myCurrentPick || !this.fixtures) return false;
-                    if (!this.isGroupStage) {
-                        // In knockouts, entire round is locked if deadline passed
-                        return new Date() > new Date(this.fixtures[0].gameweek.deadline);
-                    }
-                    // In group stages, only lock if the specific match has started
+                    
+                    // Always lock if the specific match has started
                     const currentFixture = this.fixtures.find(f => f.home_team === this.myCurrentPick || f.away_team === this.myCurrentPick);
                     if (!currentFixture) return false;
                     return new Date() > new Date(currentFixture.kickoff_time);
