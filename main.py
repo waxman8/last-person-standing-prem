@@ -299,8 +299,8 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
     session.add(gw)
 
     next_gw = session.exec(select(Gameweek).where(
-        and_(Gameweek.competition_id == gw.competition_id, Gameweek.number == gw.number + 1)
-    )).first()
+        and_(Gameweek.competition_id == gw.competition_id, Gameweek.number > gw.number)
+    ).order_by(Gameweek.number)).first()
     
     if next_gw:
         gw.is_current = False

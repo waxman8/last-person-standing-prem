@@ -45,16 +45,24 @@ def sync_fixtures_logic(session):
                 ).first()
                 
                 if not gw:
-                    is_curr = (gw_number == current_gw_num) if not existing_current_gw else False
+                    is_curr = (gw_number == current_gw_num) if (not existing_current_gw or existing_current_gw.is_processed) else False
                     gw = Gameweek(number=gw_number, competition_id=comp.id, deadline=kickoff, is_current=is_curr)
+                    if is_curr and existing_current_gw and existing_current_gw.id != gw.id:
+                        existing_current_gw.is_current = False
+                        session.add(existing_current_gw)
                     session.add(gw)
                     session.flush() # Get ID
                 else:
                     if not gw.is_current and not gw.is_processed and m['status'] not in ['FINISHED', 'POSTPONED', 'CANCELLED']:
                         if kickoff < gw.deadline:
                             gw.deadline = kickoff
-                    if not existing_current_gw:
-                        gw.is_current = (gw_number == current_gw_num)
+                    if not existing_current_gw or existing_current_gw.is_processed:
+                        is_new_curr = (gw_number == current_gw_num)
+                        if is_new_curr and not gw.is_current:
+                            gw.is_current = True
+                            if existing_current_gw and existing_current_gw.id != gw.id:
+                                existing_current_gw.is_current = False
+                                session.add(existing_current_gw)
                 
                 # Upsert Fixture
                 home_team_data = m.get('homeTeam', {})
@@ -91,6 +99,7 @@ def sync_fixtures_logic(session):
                     fix.status = m['status']
                     fix.kickoff_time = kickoff
                     fix.stage = stage
+                    fix.gameweek_id = gw.id # Update in case mapping changed (e.g. Stage 10 -> 4)
                     fix.home_team_crest = home_team_data.get('crest')
                     fix.away_team_crest = away_team_data.get('crest')
 
@@ -127,7 +136,9 @@ def stage_to_number(stage: str) -> int:
     mapping = {
         'GROUP_STAGE': 1, # Should be handled by matchday usually
         'ROUND_OF_32': 4,
+        'LAST_32': 4,
         'ROUND_OF_16': 5,
+        'LAST_16': 5,
         'QUARTER_FINALS': 6,
         'SEMI_FINALS': 7,
         'FINAL': 8,

@@ -1,7 +1,7 @@
 import requests
 import os
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")
 BASE_URL = "https://api.football-data.org/v4"
@@ -33,7 +33,7 @@ def get_pl_fixtures() -> List[Dict]:
 def get_wc_fixtures() -> List[Dict]:
     return get_fixtures("WC")
 
-def get_current_matchday(competition_code: str = "WC") -> int:
+def get_current_matchday(competition_code: str = "WC") -> Optional[int]:
     """Fetch current matchday/gameweek number from competition info."""
     if not API_KEY:
         return 1
@@ -44,10 +44,14 @@ def get_current_matchday(competition_code: str = "WC") -> int:
         if response.status_code == 200:
             data = response.json()
             # For tournaments, currentMatchday might be null, so we check season or stages
-            return data.get("currentSeason", {}).get("currentMatchday") or 1
+            val = data.get("currentSeason", {}).get("currentMatchday")
+            if val is None and competition_code == "WC":
+                 # Don't default to 1 for WC, as it might be in knockouts
+                 return None
+            return val or 1
     except:
         pass
     return 1
 
 def get_current_gameweek_number() -> int:
-    return get_current_matchday("PL")
+    return get_current_matchday("PL") or 1
