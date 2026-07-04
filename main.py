@@ -158,7 +158,10 @@ async def user_re_entry(user_id: int, competition_id: int = 2, admin: User = Dep
         select(Gameweek).where(and_(Gameweek.competition_id == competition_id, Gameweek.is_current == True))
     ).first()
     
-    if not current_gw or (not current_gw.re_entry_allowed and not current_gw.is_rollover and not status.eligible_for_rebuy):
+    if not current_gw:
+        raise HTTPException(status_code=400, detail="Re-entry or Rollover activation not allowed cannot determine current GW")
+    
+    if not current_gw.re_entry_allowed and not current_gw.is_rollover and not status.eligible_for_rebuy:
         raise HTTPException(status_code=400, detail="Re-entry or Rollover activation not allowed in the current stage")
     
     if status.status == "ACTIVE":

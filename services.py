@@ -158,7 +158,7 @@ def check_rebuy_eligibility(competition_code: str, stage: str) -> bool:
     if competition_code == "WC":
         # Re-buy allowed for Group Stage, R32, and R16 (to enter R8)
         # Rule: No re-buy after R8 (Quarter Finals)
-        return stage in ['GROUP_STAGE', 'ROUND_OF_32', 'ROUND_OF_16']
+        return stage in ['GROUP_STAGE', 'ROUND_OF_32', 'LAST_32', 'ROUND_OF_16', 'LAST_16']
     return False
 
 def process_live_results(session, competition):
@@ -244,7 +244,6 @@ def retroactive_status_sync(session):
             )).first()
             
             if fixture and fixture.status == 'FINISHED':
-                logger.info(f"DEBUG RETRO: Processing pick for user {pick.user_id}, team {pick.team_name}. Fixture {fixture.id} winner is {fixture.winner}")
                 if fixture.winner != pick.team_name:
                     if status.status != 'OUT':
                         logger.info(f"DEBUG RETRO: Marking user {pick.user_id} as OUT. Pick: {pick.team_name}, Winner: {fixture.winner}")
@@ -254,6 +253,13 @@ def retroactive_status_sync(session):
                             status.eligible_for_rebuy = True
                         session.add(status)
                         count += 1
+                    else:
+                        # Even if they are already OUT, re-check eligibility in case code changed
+                        if check_rebuy_eligibility(comp.code, fixture.stage):
+                            if not status.eligible_for_rebuy:
+                                status.eligible_for_rebuy = True
+                                session.add(status)
+                                count += 1
                 else:
                     # If they won, make sure they are ACTIVE (in case of manual error override)
                     if status.status == 'OUT':
