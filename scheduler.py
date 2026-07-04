@@ -4,7 +4,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from sqlmodel import select, and_, col
 from database import SessionLocal, get_session
-from models import Fixture, Gameweek
+from models import Fixture, Gameweek, Competition
 from services import sync_fixtures_logic
 
 from uvicorn.logging import DefaultFormatter
@@ -34,10 +34,11 @@ async def fixture_scheduler_worker():
                 # Step 2: Determine next schedule
                 now = datetime.now(timezone.utc)
                 
-                # Rule B: Check if any match is currently "on"
+                # Rule B: Check if any match is currently "on" (HARDCODED: Only for WC)
                 # "On" means it has started and it's not finished/postponed/cancelled
                 match_on = session.exec(
                     select(Fixture).where(
+                        col(Fixture.competition_id).in_(select(Competition.id).where(Competition.code == "WC")),
                         Fixture.kickoff_time <= now,
                         col(Fixture.status).not_in(["FINISHED", "POSTPONED", "CANCELLED"])
                     )
@@ -48,10 +49,13 @@ async def fixture_scheduler_worker():
                     next_run_seconds = 300
                     logger.info(f"{get_ts()} - scheduler - Match(es) currently in play or pending completion. Next poll in 5 mins.")
                 else:
-                    # Rule A: no match on, sleep until 5 mins after the start of the next match
+                    # Rule A: no match on, sleep until 5 mins after the start of the next match (HARDCODED: Only for WC)
                     next_fixture = session.exec(
                         select(Fixture)
-                        .where(Fixture.kickoff_time > now)
+                        .where(
+                            col(Fixture.competition_id).in_(select(Competition.id).where(Competition.code == "WC")),
+                            Fixture.kickoff_time > now
+                        )
                         .order_by(Fixture.kickoff_time)
                     ).first()
                     

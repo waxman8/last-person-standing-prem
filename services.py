@@ -8,7 +8,8 @@ logger = logging.getLogger(__name__)
 
 def sync_fixtures_logic(session):
     """Core logic to fetch and update fixtures for all active competitions."""
-    competitions = session.exec(select(Competition).where(Competition.is_active == True)).all()
+    # HARDCODED: Only sync World Cup (WC)
+    competitions = session.exec(select(Competition).where(Competition.code == "WC")).all()
     logger.info(f"Starting sync for {len(competitions)} competitions")
     
     for comp in competitions:
@@ -70,12 +71,6 @@ def sync_fixtures_logic(session):
                 home_team = home_team_data.get('name')
                 away_team = away_team_data.get('name')
                 
-                # LOG TEAM INFO FOR MAPPING
-                if home_team:
-                    logger.info(f"TEAM_MAPPING: {home_team} -> {home_team_data.get('crest')}")
-                if away_team:
-                    logger.info(f"TEAM_MAPPING: {away_team} -> {away_team_data.get('crest')}")
-                
                 if not home_team or not away_team:
                     logger.warning(f"Skipping fixture {m['id']} as teams are not yet determined")
                     continue
@@ -106,6 +101,19 @@ def sync_fixtures_logic(session):
                 # Process results
                 score_data = m.get('score') or {}
                 winner_code = score_data.get('winner') # HOME_TEAM, AWAY_TEAM, DRAW
+                ft = score_data.get('fullTime') or {}
+                home_score = ft.get('home')
+                away_score = ft.get('away')
+
+                # Fallback: Derive winner if match is FINISHED but API hasn't set winner yet
+                if m.get('status') == 'FINISHED' and not winner_code:
+                    if home_score is not None and away_score is not None:
+                        if home_score > away_score:
+                            winner_code = "HOME_TEAM"
+                        elif away_score > home_score:
+                            winner_code = "AWAY_TEAM"
+                        else:
+                            winner_code = "DRAW"
                 
                 if winner_code:
                     if winner_code == "HOME_TEAM":
@@ -116,9 +124,8 @@ def sync_fixtures_logic(session):
                         fix.winner = "DRAW"
                     
                     # Update scores
-                    ft = score_data.get('fullTime') or {}
-                    fix.home_score = ft.get('home')
-                    fix.away_score = ft.get('away')
+                    fix.home_score = home_score
+                    fix.away_score = away_score
 
             session.commit()
             
@@ -188,7 +195,9 @@ def process_live_results(session, competition):
         )).first()
         
         if fixture and fixture.status == 'FINISHED':
+            logger.info(f"DEBUG: Processing pick for user {pick.user_id}, team {pick.team_name}. Fixture {fixture.id} winner is {fixture.winner}")
             if fixture.winner != pick.team_name:
+                logger.info(f"DEBUG: Marking user {pick.user_id} as OUT. Pick: {pick.team_name}, Winner: {fixture.winner}")
                 status.status = 'OUT'
                 status.is_active = False
                 # Eligibility for re-buy based on centralized rules
@@ -200,7 +209,8 @@ def process_live_results(session, competition):
 
 def retroactive_status_sync(session):
     """Retroactively updates player statuses for all finished matches in current gameweeks."""
-    competitions = session.exec(select(Competition).where(Competition.is_active == True)).all()
+    # HARDCODED: Only sync World Cup (WC)
+    competitions = session.exec(select(Competition).where(Competition.code == "WC")).all()
     count = 0
     for comp in competitions:
         current_gw = session.exec(
@@ -234,8 +244,10 @@ def retroactive_status_sync(session):
             )).first()
             
             if fixture and fixture.status == 'FINISHED':
+                logger.info(f"DEBUG RETRO: Processing pick for user {pick.user_id}, team {pick.team_name}. Fixture {fixture.id} winner is {fixture.winner}")
                 if fixture.winner != pick.team_name:
                     if status.status != 'OUT':
+                        logger.info(f"DEBUG RETRO: Marking user {pick.user_id} as OUT. Pick: {pick.team_name}, Winner: {fixture.winner}")
                         status.status = 'OUT'
                         status.is_active = False
                         if check_rebuy_eligibility(comp.code, fixture.stage):
@@ -245,6 +257,7 @@ def retroactive_status_sync(session):
                 else:
                     # If they won, make sure they are ACTIVE (in case of manual error override)
                     if status.status == 'OUT':
+                        logger.info(f"DEBUG RETRO: Marking user {pick.user_id} as ACTIVE (Win). Pick: {pick.team_name}, Winner: {fixture.winner}")
                         status.status = 'ACTIVE'
                         status.is_active = True
                         status.eligible_for_rebuy = False
