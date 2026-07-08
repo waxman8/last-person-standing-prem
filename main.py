@@ -385,22 +385,28 @@ async def make_pick(team_name: str, competition_id: int = 2, current_user: User 
     is_knockout = sample_fix and sample_fix.stage not in ['REGULAR', 'GROUP_STAGE']
 
     # Determine history threshold: individual re-entry or global rollover
-    user_re_entry_id = status.last_re_entry_gw_id or 0
+    # Resolve IDs to stage numbers for correct chronological comparison
+    user_re_entry_number = 0
+    if status.last_re_entry_gw_id:
+        re_entry_gw = session.get(Gameweek, status.last_re_entry_gw_id)
+        if re_entry_gw:
+            user_re_entry_number = re_entry_gw.number
+
     latest_rollover = session.exec(select(Gameweek).where(
         and_(Gameweek.competition_id == competition_id, Gameweek.is_rollover == True)
-    ).order_by(desc(Gameweek.id))).first()
-    rollover_threshold_id = latest_rollover.id if latest_rollover else 0
+    ).order_by(desc(Gameweek.number))).first()
+    rollover_threshold_number = latest_rollover.number if latest_rollover else 0
     
-    # The effective threshold is the most recent of the two
-    effective_threshold_id = max(user_re_entry_id, rollover_threshold_id)
+    # The effective threshold is the highest stage number among re-entries and rollovers
+    effective_threshold_number = max(user_re_entry_number, rollover_threshold_number)
 
     if not is_knockout or (comp and comp.type == 'LEAGUE'):
-        prev_pick = session.exec(select(Pick).where(and_(
+        prev_pick = session.exec(select(Pick).join(Gameweek).where(and_(
             Pick.user_id == current_user.id,
             Pick.competition_id == competition_id,
             Pick.team_name == team_name,
             Pick.gameweek_id != current_gw.id,
-            Pick.gameweek_id >= effective_threshold_id
+            Gameweek.number >= effective_threshold_number
         ))).first()
         
         if prev_pick:
@@ -574,9 +580,9 @@ async def get_admin_standings(competition_id: int = 2, admin: User = Depends(get
 
 @app.get("/history")
 async def get_user_history(competition_id: int = 2, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    picks = session.exec(select(Pick).where(and_(
+    picks = session.exec(select(Pick).join(Gameweek).where(and_(
         Pick.user_id == current_user.id, Pick.competition_id == competition_id
-    )).order_by(Pick.gameweek_id)).all()
+    )).order_by(Gameweek.number)).all()
     
     history = []
     for pick in picks:

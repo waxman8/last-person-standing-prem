@@ -36,6 +36,10 @@ def sync_fixtures_logic(session):
                 # For simplicity, we'll use a sequence or map stages to numbers
                 gw_number = matchday if matchday else stage_to_number(stage)
                 
+                if gw_number is None:
+                    logger.info(f"Skipping fixture {m['id']} as stage '{stage}' is not mapped/allowed")
+                    continue
+                
                 kickoff = datetime.fromisoformat(m['utcDate'].replace('Z', '+00:00'))
                 
                 # Upsert Gameweek
@@ -138,8 +142,8 @@ def sync_fixtures_logic(session):
 
     return {"message": "Fixtures synced and live results applied for all competitions"}
 
-def stage_to_number(stage: str) -> int:
-    """Maps tournament stages to a numeric sequence."""
+def stage_to_number(stage: str) -> int | None:
+    """Maps tournament stages to a numeric sequence. Returns None if stage should be excluded."""
     mapping = {
         'GROUP_STAGE': 1, # Should be handled by matchday usually
         'ROUND_OF_32': 4,
@@ -149,9 +153,8 @@ def stage_to_number(stage: str) -> int:
         'QUARTER_FINALS': 6,
         'SEMI_FINALS': 7,
         'FINAL': 8,
-        'THIRD_PLACE': 9
     }
-    return mapping.get(stage, 10)
+    return mapping.get(stage)
 
 def check_rebuy_eligibility(competition_code: str, stage: str) -> bool:
     """Centralized logic for competition-specific re-buy eligibility."""

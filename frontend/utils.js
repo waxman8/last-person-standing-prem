@@ -14,8 +14,7 @@ window.LMS_UTILS = {
         5: 'Round of 16',
         6: 'Quarter Finals',
         7: 'Semi Finals',
-        8: 'Final',
-        9: 'Third Place'
+        8: 'Final'
     },
 
     /**
@@ -41,8 +40,7 @@ window.LMS_UTILS = {
                 'ROUND_OF_16': 'Round of 16',
                 'QUARTER_FINALS': 'Quarter Finals',
                 'SEMI_FINALS': 'Semi Finals',
-                'FINAL': 'Final',
-                'THIRD_PLACE': 'Third Place'
+                'FINAL': 'Final'
             };
             
             if (mapping[stage]) {
