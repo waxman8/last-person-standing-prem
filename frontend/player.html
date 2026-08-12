@@ -329,10 +329,10 @@
                     const compRes = await fetch('/public/competitions', { headers });
                     this.competitions = await compRes.json();
                     if (this.competitions.length > 0) {
-                        // Default to WC if available, else PL, else first
-                        const wc = this.competitions.find(c => c.code === 'WC');
+                        // Prioritize active competitions, then PL specifically
+                        const active = this.competitions.find(c => c.is_active);
                         const pl = this.competitions.find(c => c.code === 'PL');
-                        this.selectedCompId = wc ? wc.id : (pl ? pl.id : this.competitions[0].id);
+                        this.selectedCompId = active ? active.id : (pl ? pl.id : this.competitions[0].id);
                     }
                     await this.loadData();
                 },
@@ -379,7 +379,7 @@
                 getFriendlyName() {
                     if (!this.fixtures || this.fixtures.length === 0) return 'this stage';
                     const gw = this.fixtures[0].gameweek;
-                    return window.LMS_UTILS.getFriendlyStageName(gw);
+                    return window.LMS_UTILS.getFriendlyStageName(gw, this.fixtures);
                 },
                 getLogoUrl(teamName, crestUrl) {
                     const fallback = 'https://crests.football-data.org/77.svg'; // Default globe icon

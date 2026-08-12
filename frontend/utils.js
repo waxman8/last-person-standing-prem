@@ -26,14 +26,13 @@ window.LMS_UTILS = {
     getFriendlyStageName(gw, fixtures) {
         if (!gw) return 'Loading...';
         
-        // Try to use the pre-defined number-based map first for consistency
-        if (this.STAGE_MAP[gw.number]) {
-            return this.STAGE_MAP[gw.number];
-        }
-
-        // Fallback to fixture-based detection if number isn't in map
+        // Fallback to fixture-based detection first to see if it's a regular league match
         if (fixtures && fixtures.length > 0) {
             const stage = fixtures[0].stage;
+            if (stage === 'REGULAR' || stage === 'REGULAR_SEASON' || stage === 'COMPETITION_MATCHDAY') {
+                return `Game Week ${gw.number}`;
+            }
+
             const mapping = {
                 'GROUP_STAGE': `Group Stage ${gw.number}`,
                 'ROUND_OF_32': 'Round of 32',
@@ -47,7 +46,12 @@ window.LMS_UTILS = {
                 return mapping[stage];
             }
         }
+
+        // For Prem 26/27 (and other leagues), we prefer "Game Week"
+        // If we don't have fixtures, we'll still use the number but avoid the tournament map if possible
+        // but since we don't know the competition type here easily, we'll just return Game Week by default
+        // unless it's a known tournament number and we want to keep that logic for now.
         
-        return `Stage ${gw.number}`;
+        return `Game Week ${gw.number}`;
     }
 };

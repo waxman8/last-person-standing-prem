@@ -480,7 +480,8 @@
                 },
                 getFriendlyName(gw) {
                     if (!gw) return 'Loading...';
-                    return window.LMS_UTILS.getFriendlyStageName(gw);
+                    const fixtures = (this.selectedGWId === gw.id) ? this.fixtures : [];
+                    return window.LMS_UTILS.getFriendlyStageName(gw, fixtures);
                 },
                 triggerCelebration() {
                     if (this.hasCelebrated) return;

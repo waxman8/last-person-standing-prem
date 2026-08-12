@@ -34,11 +34,13 @@ async def fixture_scheduler_worker():
                 # Step 2: Determine next schedule
                 now = datetime.now(timezone.utc)
                 
-                # Rule B: Check if any match is currently "on" (HARDCODED: Only for WC)
+                # Rule B: Check if any match is currently "on" for any active competition
                 # "On" means it has started and it's not finished/postponed/cancelled
+                active_comp_ids = select(Competition.id).where(Competition.is_active == True)
+                
                 match_on = session.exec(
                     select(Fixture).where(
-                        col(Fixture.competition_id).in_(select(Competition.id).where(Competition.code == "WC")),
+                        col(Fixture.competition_id).in_(active_comp_ids),
                         Fixture.kickoff_time <= now,
                         col(Fixture.status).not_in(["FINISHED", "POSTPONED", "CANCELLED"])
                     )
@@ -49,11 +51,11 @@ async def fixture_scheduler_worker():
                     next_run_seconds = 300
                     logger.info(f"{get_ts()} - scheduler - Match(es) currently in play or pending completion. Next poll in 5 mins.")
                 else:
-                    # Rule A: no match on, sleep until 5 mins after the start of the next match (HARDCODED: Only for WC)
+                    # Rule A: no match on, sleep until 5 mins after the start of the next match
                     next_fixture = session.exec(
                         select(Fixture)
                         .where(
-                            col(Fixture.competition_id).in_(select(Competition.id).where(Competition.code == "WC")),
+                            col(Fixture.competition_id).in_(active_comp_ids),
                             Fixture.kickoff_time > now
                         )
                         .order_by(Fixture.kickoff_time)

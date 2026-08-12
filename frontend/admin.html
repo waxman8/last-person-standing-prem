@@ -308,10 +308,10 @@
                     const compRes = await fetch('/admin/competitions', { headers });
                     this.competitions = await compRes.json();
                     if (this.competitions.length > 0) {
-                         // Default to WC if available, else PL, else first
-                         const wc = this.competitions.find(c => c.code === 'WC');
+                         // Prioritize active competitions, then PL specifically
+                         const active = this.competitions.find(c => c.is_active);
                          const pl = this.competitions.find(c => c.code === 'PL');
-                         this.selectedCompId = wc ? wc.id : (pl ? pl.id : this.competitions[0].id);
+                         this.selectedCompId = active ? active.id : (pl ? pl.id : this.competitions[0].id);
                     }
                     await this.loadData();
                 },
@@ -424,7 +424,8 @@
                 },
                 getFriendlyName(gw) {
                     if (!gw) return 'Loading...';
-                    return window.LMS_UTILS.getFriendlyStageName(gw);
+                    const fixtures = (this.selectedGWId === gw.id) ? this.fixtures : [];
+                    return window.LMS_UTILS.getFriendlyStageName(gw, fixtures);
                 },
                 formatDate(dateStr) { return new Date(dateStr).toLocaleString(); }
             }

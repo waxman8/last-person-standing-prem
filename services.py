@@ -8,8 +8,7 @@ logger = logging.getLogger(__name__)
 
 def sync_fixtures_logic(session):
     """Core logic to fetch and update fixtures for all active competitions."""
-    # HARDCODED: Only sync World Cup (WC)
-    competitions = session.exec(select(Competition).where(Competition.code == "WC")).all()
+    competitions = session.exec(select(Competition).where(Competition.is_active == True)).all()
     logger.info(f"Starting sync for {len(competitions)} competitions")
     
     for comp in competitions:
@@ -99,6 +98,7 @@ def sync_fixtures_logic(session):
                     fix.kickoff_time = kickoff
                     fix.stage = stage
                     fix.gameweek_id = gw.id # Update in case mapping changed (e.g. Stage 10 -> 4)
+                    fix.competition_id = comp.id # Ensure it's linked to the current active competition
                     fix.home_team_crest = home_team_data.get('crest')
                     fix.away_team_crest = away_team_data.get('crest')
 
@@ -212,8 +212,7 @@ def process_live_results(session, competition):
 
 def retroactive_status_sync(session):
     """Retroactively updates player statuses for all finished matches in current gameweeks."""
-    # HARDCODED: Only sync World Cup (WC)
-    competitions = session.exec(select(Competition).where(Competition.code == "WC")).all()
+    competitions = session.exec(select(Competition).where(Competition.is_active == True)).all()
     count = 0
     for comp in competitions:
         current_gw = session.exec(

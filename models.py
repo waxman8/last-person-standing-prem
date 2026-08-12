@@ -42,7 +42,7 @@ class User(SQLModel, table=True):
 class Gameweek(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     number: int  # The matchday number or stage sequence
-    competition_id: int = Field(foreign_key="competition.id", default=2)
+    competition_id: int = Field(foreign_key="competition.id")
     deadline: datetime = Field(sa_column=Column(DateTime(timezone=True)))
     is_current: bool = Field(default=False)
     is_processed: bool = Field(default=False)
@@ -56,7 +56,7 @@ class Gameweek(SQLModel, table=True):
 class Fixture(SQLModel, table=True):
     id: int = Field(primary_key=True)  # External API ID
     gameweek_id: int = Field(foreign_key="gameweek.id")
-    competition_id: int = Field(foreign_key="competition.id", default=2)
+    competition_id: int = Field(foreign_key="competition.id")
     home_team: Optional[str] = None
     away_team: Optional[str] = None
     home_team_crest: Optional[str] = None
@@ -74,7 +74,7 @@ class Pick(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id")
     gameweek_id: int = Field(foreign_key="gameweek.id")
-    competition_id: int = Field(foreign_key="competition.id", default=2)
+    competition_id: int = Field(foreign_key="competition.id")
     team_name: str
     timestamp: datetime = Field(
         sa_column=Column(DateTime(timezone=True)),
