@@ -56,9 +56,6 @@
                     <div class="space-y-4 mb-6 max-h-96 overflow-y-auto">
                         <div v-for="u in users" :key="u.id" class="flex justify-between items-center border-b pb-2 group">
                             <div class="flex items-center">
-                                <div v-if="getPlayerStatus(u.id).current_pick" class="w-6 h-6 flex items-center justify-center bg-gray-50 rounded border border-gray-100 shadow-sm overflow-hidden mr-2">
-                                    <img :src="getLogoUrl(getPlayerStatus(u.id).current_pick, getPlayerStatus(u.id).current_pick_crest)" class="w-4 h-4 object-contain" @error="handleLogoError">
-                                </div>
                                 <div class="flex flex-col">
                                     <span class="font-medium">{{ u.name }}</span>
                                     <span class="text-[10px] text-gray-500">PIN: {{ u.pin }}</span>

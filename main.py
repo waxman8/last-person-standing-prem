@@ -426,8 +426,14 @@ async def make_pick(team_name: str, competition_id: int, current_user: User = De
     ))).first()
     
     if not fixture: raise HTTPException(status_code=400, detail="Invalid team selection")
-    if datetime.now(timezone.utc) > fixture.kickoff_time:
-        raise HTTPException(status_code=400, detail=f"Match for {team_name} has already started")
+    # NEW: Global deadline for LEAGUE type (Premier League)
+    if comp and comp.type == "LEAGUE":
+        if datetime.now(timezone.utc) > current_gw.deadline:
+            raise HTTPException(status_code=400, detail="Deadline passed for this round (first match has started)")
+    else:
+        # TOURNAMENT (World Cup) still allows per-match locking
+        if datetime.now(timezone.utc) > fixture.kickoff_time:
+            raise HTTPException(status_code=400, detail=f"Match for {team_name} has already started")
 
     existing_pick = session.exec(select(Pick).where(and_(
         Pick.user_id == current_user.id, Pick.gameweek_id == current_gw.id
@@ -440,8 +446,12 @@ async def make_pick(team_name: str, competition_id: int, current_user: User = De
             (Fixture.home_team == existing_pick.team_name) | (Fixture.away_team == existing_pick.team_name)
         ))).first()
         
-        if old_fixture and datetime.now(timezone.utc) > old_fixture.kickoff_time:
-            raise HTTPException(status_code=400, detail=f"Cannot change pick: Match for your current pick ({existing_pick.team_name}) has already started")
+        if comp and comp.type == "LEAGUE":
+            if datetime.now(timezone.utc) > current_gw.deadline:
+                raise HTTPException(status_code=400, detail="Cannot change pick: Deadline passed for this round")
+        else:
+            if old_fixture and datetime.now(timezone.utc) > old_fixture.kickoff_time:
+                raise HTTPException(status_code=400, detail=f"Cannot change pick: Match for your current pick ({existing_pick.team_name}) has already started")
 
         existing_pick.team_name = team_name
         existing_pick.timestamp = datetime.now(timezone.utc)
@@ -529,17 +539,28 @@ def _get_standings_data(competition_id: int, session: Session, include_pending: 
     total_queued_re_entries = sum(1 for s in statuses if getattr(s, 'has_paid_reentry', False))
     total_rollover_re_entries = sum(getattr(s, 'number_of_rollovers', 0) for s in statuses)
     paid_entries = sum(1 for s in statuses if s.paid or s.status in ['ACTIVE', 'OUT'])
-    prize_pot = (paid_entries + total_re_entries + total_queued_re_entries + total_rollover_re_entries) * 5
     
+    comp = session.get(Competition, competition_id)
+    entry_fee = comp.entry_fee if comp else 5.0
+    prize_pot = (paid_entries + total_re_entries + total_queued_re_entries + total_rollover_re_entries) * entry_fee
+    
+    # NEW: Logic to hide picks until the first kickoff for Premier League (LEAGUE type)
+    deadline_passed = True
+    if current_gw and comp and comp.type == "LEAGUE":
+        deadline_passed = datetime.now(timezone.utc) >= current_gw.deadline
+
     results = []
     for u in users:
         status = status_map.get(u.id)
         if not status: continue
         pick = None
         pick_crest = None
+        has_pick = False
+        
         if current_gw:
             pick_obj = session.exec(select(Pick).where(and_(Pick.user_id == u.id, Pick.gameweek_id == current_gw.id))).first()
-            if pick_obj: 
+            if pick_obj:
+                has_pick = True
                 pick = pick_obj.team_name
                 # Find crest for this pick from the fixture list
                 fix_for_pick = session.exec(select(Fixture).where(and_(
@@ -549,6 +570,10 @@ def _get_standings_data(competition_id: int, session: Session, include_pending: 
                 if fix_for_pick:
                     pick_crest = fix_for_pick.home_team_crest if fix_for_pick.home_team == pick else fix_for_pick.away_team_crest
         
+        # Hide pick details if it's a LEAGUE competition and the deadline hasn't passed
+        # BUT always allow admins to see it (include_pending is true for admin standings)
+        is_hidden = has_pick and not deadline_passed and not include_pending
+        
         results.append({
             "name": u.name,
             "id": u.id,
@@ -556,18 +581,21 @@ def _get_standings_data(competition_id: int, session: Session, include_pending: 
             "is_pending": status.status == "PENDING",
             "is_queued": getattr(status, 'has_paid_reentry', False),
             "eligible_for_rebuy": status.eligible_for_rebuy,
-            "current_pick": pick,
-            "current_pick_crest": pick_crest,
+            "current_pick": "HIDDEN" if is_hidden else pick,
+            "current_pick_crest": None if is_hidden else pick_crest,
+            "has_hidden_pick": is_hidden,
             "re_entries": status.number_of_re_entries,
             "rollover_re_entries": getattr(status, 'number_of_rollovers', 0)
         })
     
     return {
         "gw_id": current_gw.number if current_gw else None,
+        "deadline_passed": deadline_passed,
         "standings": results,
         "total_re_entries": total_re_entries,
         "total_rollover_re_entries": total_rollover_re_entries,
-        "prize_pot": prize_pot
+        "prize_pot": prize_pot,
+        "entry_fee": entry_fee
     }
 
 @app.get("/public/standings")

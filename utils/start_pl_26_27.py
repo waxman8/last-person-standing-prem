@@ -21,8 +21,8 @@ def start_new_season():
         # 2. Add Premier League 26/27
         print("Adding Premier League 26/27 competition...")
         cursor.execute("""
-            INSERT INTO competition (name, code, is_active, type) 
-            VALUES ('Premier League 26/27', 'PL', 1, 'LEAGUE')
+            INSERT INTO competition (name, code, is_active, type, entry_fee)
+            VALUES ('Premier League 26/27', 'PL', 1, 'LEAGUE', 7.5)
         """)
         new_comp_id = cursor.lastrowid
         print(f"New Competition ID: {new_comp_id}")

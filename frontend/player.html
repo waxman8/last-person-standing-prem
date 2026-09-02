@@ -76,7 +76,7 @@
                 <p class="text-blue-700 leading-relaxed mb-6">
                     You're currently <span class="font-bold">Pending</span>. The gaffer won't let you on the pitch until you've settled the entry fee!
                     <br><br>
-                    Cough up the <span class="font-bold underline decoration-blue-400 decoration-2">£5 entry fee</span> to the admin to get your registration over the line.
+                    Cough up the <span class="font-bold underline decoration-blue-400 decoration-2">£{{ entryFee }} entry fee</span> to the admin to get your registration over the line.
                     Don't be the one left watching from the stands while everyone else is chasing the glory (and the pot)!
                 </p>
                 <div class="inline-block bg-blue-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg">
@@ -87,7 +87,7 @@
             <!-- Re-buy Option -->
             <div v-if="eligibleForRebuy && !isUserQueued" class="mb-8 bg-yellow-50 border-2 border-yellow-200 p-6 rounded-2xl shadow-sm text-center">
                 <h3 class="text-xl font-bold text-yellow-800 mb-2">You can re-buy!</h3>
-                <p class="text-yellow-700 mb-4">You were eliminated, but re-buys are available for this round (£5).</p>
+                <p class="text-yellow-700 mb-4">You were eliminated, but re-buys are available for this round (£{{ entryFee }}).</p>
                 <button class="bg-yellow-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-yellow-700 transition">
                     Contact Admin to Re-buy
                 </button>
@@ -97,7 +97,7 @@
             <div v-if="isUserQueued" class="mb-8 bg-orange-50 border-2 border-orange-200 p-6 rounded-2xl shadow-sm text-center">
                 <h3 class="text-xl font-bold text-orange-800 mb-2">Re-entry Confirmed!</h3>
                 <p class="text-orange-700">
-                    Your re-entry has been processed and your £5 has been added to the pot.
+                    Your re-entry has been processed and your £{{ entryFee }} has been added to the pot.
                     <br><br>
                     <span class="font-bold">You will be automatically moved to ACTIVE status when the next round starts.</span>
                 </p>
@@ -115,7 +115,7 @@
                             </div>
                             <div>
                                 <p class="text-3xl font-black">{{ myCurrentPick }}</p>
-                                <p v-if="isPickLocked" class="text-red-200 text-xs font-bold uppercase tracking-tighter">Match started - Pick locked</p>
+                                <p v-if="isPickLocked" class="text-red-200 text-xs font-bold uppercase tracking-tighter">Round started - Pick locked</p>
                                 <p v-else class="text-blue-100 opacity-75">Good luck!</p>
                             </div>
                         </div>
@@ -213,7 +213,10 @@
                     <div v-for="player in filteredStandings" class="flex justify-between border-b pb-2">
                         <span :class="{'line-through text-gray-400': !player.is_active}">{{ player.name }}</span>
                         <span class="font-medium min-w-0 ml-4">
-                            <span v-if="player.current_pick" class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm flex items-center truncate max-w-[150px]" :title="player.current_pick">
+                            <span v-if="player.has_hidden_pick" class="text-gray-400 text-sm italic flex items-center">
+                                <span class="mr-1">🔒</span> Hidden
+                            </span>
+                            <span v-else-if="player.current_pick" class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm flex items-center truncate max-w-[150px]" :title="player.current_pick">
                                 <img :src="getLogoUrl(player.current_pick, player.current_pick_crest)" class="w-4 h-4 object-contain mr-1 flex-shrink-0" @error="handleLogoError">
                                 <span class="truncate">{{ player.current_pick }}</span>
                             </span>
@@ -237,6 +240,7 @@
                     user: JSON.parse(localStorage.getItem('user_profile') || '{}'),
                     competitions: [],
                     selectedCompId: 1,
+                    entryFee: 5.0,
                     myStatus: null,
                     fixtures: [],
                     standings: [],
@@ -285,7 +289,14 @@
                 isPickLocked() {
                     if (!this.myCurrentPick || !this.fixtures) return false;
                     
-                    // Always lock if the specific match has started
+                    // Check if competition is a LEAGUE (Premier League)
+                    const comp = this.competitions.find(c => c.id === this.selectedCompId);
+                    if (comp && comp.type === 'LEAGUE') {
+                        // Global lock based on gameweek deadline
+                        return new Date() > new Date(this.fixtures[0].gameweek.deadline);
+                    }
+                    
+                    // TOURNAMENT: Per-match lock
                     const currentFixture = this.fixtures.find(f => f.home_team === this.myCurrentPick || f.away_team === this.myCurrentPick);
                     if (!currentFixture) return false;
                     return new Date() > new Date(currentFixture.kickoff_time);
@@ -351,6 +362,9 @@
                     const standRes = await fetch(`/public/standings?competition_id=${this.selectedCompId}`, { headers });
                     const standData = await standRes.json();
                     this.standings = standData.standings;
+                    if (standData.entry_fee) {
+                        this.entryFee = standData.entry_fee;
+                    }
 
                     const histRes = await fetch(`/history?competition_id=${this.selectedCompId}`, { headers });
                     this.history = await histRes.json();

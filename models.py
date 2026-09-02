@@ -9,6 +9,7 @@ class Competition(SQLModel, table=True):
     code: str = Field(index=True)  # e.g., 'PL', 'WC'
     is_active: bool = Field(default=True)
     type: str = Field(default="LEAGUE") # LEAGUE or TOURNAMENT
+    entry_fee: float = Field(default=5.0)
 
     gameweeks: List["Gameweek"] = Relationship(back_populates="competition")
     user_statuses: List["UserCompetitionStatus"] = Relationship(back_populates="competition")

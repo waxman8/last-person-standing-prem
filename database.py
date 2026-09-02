@@ -51,6 +51,15 @@ def run_migrations():
         conn.execute(text("UPDATE pick SET timestamp = timestamp || '+00:00' WHERE timestamp NOT LIKE '%+00:00' AND timestamp NOT LIKE '%Z'"))
         print("Migration: Appended UTC offset to existing naive datetimes")
 
+        # Check for Competition.entry_fee
+        cursor = conn.execute(text("PRAGMA table_info(competition)"))
+        columns = [row[1] for row in cursor.fetchall()]
+        if "entry_fee" not in columns:
+            conn.execute(text("ALTER TABLE competition ADD COLUMN entry_fee FLOAT DEFAULT 5.0"))
+            # Specifically update PL 26/27 to 7.5
+            conn.execute(text("UPDATE competition SET entry_fee = 7.5 WHERE name LIKE '%Premier League 26/27%' OR code = 'PL'"))
+            print("Migration: Added entry_fee to competition table and updated PL fee")
+
         conn.commit()
 
 def init_db():
