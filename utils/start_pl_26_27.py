@@ -22,7 +22,7 @@ def start_new_season():
         print("Adding Premier League 26/27 competition...")
         cursor.execute("""
             INSERT INTO competition (name, code, is_active, type, entry_fee)
-            VALUES ('Premier League 26/27', 'PL', 1, 'LEAGUE', 7.5)
+            VALUES ('Lapland Prem 26/27', 'LPL', 1, 'LEAGUE', 10)
         """)
         new_comp_id = cursor.lastrowid
         print(f"New Competition ID: {new_comp_id}")
@@ -44,7 +44,7 @@ def start_new_season():
                 """, (user_id, new_comp_id))
         
         conn.commit()
-        print("Successfully initialized Premier League 26/27 season.")
+        print("Successfully initialized Lapland Prem 26/27 season.")
 
     except Exception as e:
         conn.rollback()

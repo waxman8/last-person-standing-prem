@@ -13,7 +13,7 @@ from jose import JWTError, jwt
 from sqlmodel import select, and_, desc
 
 from database import init_db, get_session
-from models import User, Gameweek, Fixture, Pick, Competition, UserCompetitionStatus
+from models import User, Gameweek, Fixture, Pick, Competition, UserCompetitionStatus, ensure_utc
 import api_client
 from services import sync_fixtures_logic, check_rebuy_eligibility, retroactive_status_sync
 from scheduler import fixture_scheduler_worker
@@ -436,12 +436,15 @@ async def make_pick(team_name: str, competition_id: int, current_user: User = De
     
     if not fixture: raise HTTPException(status_code=400, detail="Invalid team selection")
     # NEW: Global deadline for LEAGUE type (Premier League)
+    now = datetime.now(timezone.utc)
     if comp and comp.type == "LEAGUE":
-        if datetime.now(timezone.utc) > current_gw.deadline:
+        gw_deadline = ensure_utc(current_gw.deadline)
+        if gw_deadline and now > gw_deadline:
             raise HTTPException(status_code=400, detail="Deadline passed for this round (first match has started)")
     else:
         # TOURNAMENT (World Cup) still allows per-match locking
-        if datetime.now(timezone.utc) > fixture.kickoff_time:
+        fix_kickoff = ensure_utc(fixture.kickoff_time)
+        if fix_kickoff and now > fix_kickoff:
             raise HTTPException(status_code=400, detail=f"Match for {team_name} has already started")
 
     existing_pick = session.exec(select(Pick).where(and_(
@@ -456,14 +459,16 @@ async def make_pick(team_name: str, competition_id: int, current_user: User = De
         ))).first()
         
         if comp and comp.type == "LEAGUE":
-            if datetime.now(timezone.utc) > current_gw.deadline:
+            gw_deadline = ensure_utc(current_gw.deadline)
+            if gw_deadline and now > gw_deadline:
                 raise HTTPException(status_code=400, detail="Cannot change pick: Deadline passed for this round")
         else:
-            if old_fixture and datetime.now(timezone.utc) > old_fixture.kickoff_time:
+            old_fix_kickoff = ensure_utc(old_fixture.kickoff_time) if old_fixture else None
+            if old_fix_kickoff and now > old_fix_kickoff:
                 raise HTTPException(status_code=400, detail=f"Cannot change pick: Match for your current pick ({existing_pick.team_name}) has already started")
 
         existing_pick.team_name = team_name
-        existing_pick.timestamp = datetime.now(timezone.utc)
+        existing_pick.timestamp = now
     else:
         new_pick = Pick(user_id=current_user.id, gameweek_id=current_gw.id, competition_id=competition_id, team_name=team_name)
         session.add(new_pick)
@@ -556,7 +561,8 @@ def _get_standings_data(competition_id: int, session: Session, include_pending: 
     # NEW: Logic to hide picks until the first kickoff for Premier League (LEAGUE type)
     deadline_passed = True
     if current_gw and comp and comp.type == "LEAGUE":
-        deadline_passed = datetime.now(timezone.utc) >= current_gw.deadline
+        gw_deadline = ensure_utc(current_gw.deadline)
+        deadline_passed = datetime.now(timezone.utc) >= gw_deadline if gw_deadline else True
 
     results = []
     for u in users:

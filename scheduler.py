@@ -4,7 +4,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from sqlmodel import select, and_, col
 from database import SessionLocal, get_session
-from models import Fixture, Gameweek, Competition
+from models import Fixture, Gameweek, Competition, ensure_utc
 from services import sync_fixtures_logic
 
 from uvicorn.logging import DefaultFormatter
@@ -63,8 +63,12 @@ async def fixture_scheduler_worker():
                     
                     if next_fixture:
                         # Sleep until 5 mins after the next kickoff
-                        target_time = next_fixture.kickoff_time + timedelta(minutes=5)
-                        next_run_seconds = (target_time - now).total_seconds()
+                        kickoff = ensure_utc(next_fixture.kickoff_time)
+                        if kickoff:
+                            target_time = kickoff + timedelta(minutes=5)
+                            next_run_seconds = (target_time - now).total_seconds()
+                        else:
+                            next_run_seconds = 300
                         
                         # Ensure we don't sleep for a negative amount or too soon
                         if next_run_seconds < 60:

@@ -1,7 +1,40 @@
 from datetime import datetime, timezone
 from typing import List, Optional
-from sqlalchemy import Column, DateTime
+from sqlalchemy import Column, DateTime, TypeDecorator
 from sqlmodel import Field, Relationship, SQLModel
+
+class UTCDateTime(TypeDecorator):
+    """Ensures datetimes are always timezone-aware (UTC) in SQLite and memory."""
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None and isinstance(value, datetime):
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            if isinstance(value, str):
+                try:
+                    value = datetime.fromisoformat(value)
+                except ValueError:
+                    pass
+            if isinstance(value, datetime):
+                if value.tzinfo is None:
+                    return value.replace(tzinfo=timezone.utc)
+                return value.astimezone(timezone.utc)
+        return value
+
+def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Guarantees a datetime is UTC timezone-aware."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 class Competition(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -44,7 +77,7 @@ class Gameweek(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     number: int  # The matchday number or stage sequence
     competition_id: int = Field(foreign_key="competition.id")
-    deadline: datetime = Field(sa_column=Column(DateTime(timezone=True)))
+    deadline: datetime = Field(sa_column=Column(UTCDateTime))
     is_current: bool = Field(default=False)
     is_processed: bool = Field(default=False)
     re_entry_allowed: bool = Field(default=False)
@@ -62,7 +95,7 @@ class Fixture(SQLModel, table=True):
     away_team: Optional[str] = None
     home_team_crest: Optional[str] = None
     away_team_crest: Optional[str] = None
-    kickoff_time: datetime = Field(sa_column=Column(DateTime(timezone=True)))
+    kickoff_time: datetime = Field(sa_column=Column(UTCDateTime))
     status: str  # SCHEDULED, TIMED, IN_PLAY, FINISHED, POSTPONED
     stage: str = Field(default="REGULAR") # MD1, MD2, MD3, R32, R16, QF, SF, FINAL
     home_score: Optional[int] = None
@@ -78,7 +111,7 @@ class Pick(SQLModel, table=True):
     competition_id: int = Field(foreign_key="competition.id")
     team_name: str
     timestamp: datetime = Field(
-        sa_column=Column(DateTime(timezone=True)),
+        sa_column=Column(UTCDateTime),
         default_factory=lambda: datetime.now(timezone.utc)
     )
 
