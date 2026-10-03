@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import random
 import sys
@@ -33,7 +34,23 @@ logging.root.setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Last Man Standing")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    # Start the fixture scheduler in the background
+    now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+    logger.info(f"{now} - scheduler - Fixture scheduler worker started")
+    scheduler_task = asyncio.create_task(fixture_scheduler_worker())
+    try:
+        yield
+    finally:
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except asyncio.CancelledError:
+            pass
+
+app = FastAPI(title="Last Man Standing", lifespan=lifespan)
 
 @app.middleware("http")
 async def add_no_cache_header(request, call_next):
@@ -45,14 +62,6 @@ async def add_no_cache_header(request, call_next):
 
 # OAuth2 context
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-
-@app.on_event("startup")
-async def on_startup():
-    init_db()
-    # Start the fixture scheduler in the background
-    now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-    logger.info(f"{now} - scheduler - Fixture scheduler worker started")
-    asyncio.create_task(fixture_scheduler_worker())
 
 # --- Auth Helpers ---
 def create_access_token(data: dict):
