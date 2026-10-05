@@ -54,11 +54,11 @@ A web-based football prediction game where players pick one team to win each gam
    docker run -p 8000:8000 -e FOOTBALL_DATA_API_KEY="your_api_key_here" lms-game
    ```
 
-## Admin Features
-- **Sync Fixtures**: Fetch the latest Premier League fixtures and update gameweek deadlines.
-- **Manage Users**: Create and delete players.
-- **Process Results**: Automatically calculate who is through and who is eliminated based on match results.
-- **Manual Overrides**: Admins can set picks for players if needed.
+## Multi-Competition Support
+The application now supports multiple competitions (e.g., Premier League and World Cup 2026).
+- **Tournament Logic**: For the World Cup, "wins" in the knockout stages include Extra Time and Penalties.
+- **Re-buys**: Players eliminated in the group stage or early knockout rounds of the World Cup can re-buy into the next round.
+- **Ride the Wave**: The "No Repeats" rule is disabled for World Cup knockout stages, allowing players to pick the same team multiple times.
 
 ## Database Schema
 The application uses SQLite with the following main tables:

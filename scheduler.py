@@ -2,9 +2,9 @@ import asyncio
 import logging
 import sys
 from datetime import datetime, timedelta, timezone
-from sqlmodel import select, and_
+from sqlmodel import select, and_, col
 from database import SessionLocal, get_session
-from models import Fixture, Gameweek
+from models import Fixture, Gameweek, Competition, ensure_utc
 from services import sync_fixtures_logic
 
 from uvicorn.logging import DefaultFormatter
@@ -32,37 +32,48 @@ async def fixture_scheduler_worker():
                 sync_fixtures_logic(session)
                 
                 # Step 2: Determine next schedule
-                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                now = datetime.now(timezone.utc)
                 
-                # Rule B: Check if any match is currently "on"
-                # "On" means it has started, it's within the 150-min window, and it's not finished/postponed/cancelled
+                # Rule B: Check if any match is currently "on" for any active competition
+                # "On" means it has started and it's not finished/postponed/cancelled
+                active_comp_ids = select(Competition.id).where(Competition.is_active == True)
+                
                 match_on = session.exec(
                     select(Fixture).where(
-                        Fixture.kickoff_time.between(now - timedelta(minutes=150), now),
-                        Fixture.status.not_in(["FINISHED", "POSTPONED", "CANCELLED"])
+                        col(Fixture.competition_id).in_(active_comp_ids),
+                        Fixture.kickoff_time <= now,
+                        col(Fixture.status).not_in(["FINISHED", "POSTPONED", "CANCELLED"])
                     )
                 ).first() is not None
 
                 if match_on:
-                    # Rule B: poll every 10 mins while a match is on
-                    next_run_seconds = 600 
-                    logger.info(f"{get_ts()} - scheduler - Match(es) currently in play. Next poll in 10 mins.")
+                    # Rule B: poll every 5 mins while a match is on
+                    next_run_seconds = 300
+                    logger.info(f"{get_ts()} - scheduler - Match(es) currently in play or pending completion. Next poll in 5 mins.")
                 else:
                     # Rule A: no match on, sleep until 5 mins after the start of the next match
                     next_fixture = session.exec(
                         select(Fixture)
-                        .where(Fixture.kickoff_time > now)
+                        .where(
+                            col(Fixture.competition_id).in_(active_comp_ids),
+                            Fixture.kickoff_time > now
+                        )
                         .order_by(Fixture.kickoff_time)
                     ).first()
                     
                     if next_fixture:
-                        target_time = next_fixture.kickoff_time + timedelta(minutes=5)
-                        next_run_seconds = (target_time - now).total_seconds()
+                        # Sleep until 5 mins after the next kickoff
+                        kickoff = ensure_utc(next_fixture.kickoff_time)
+                        if kickoff:
+                            target_time = kickoff + timedelta(minutes=5)
+                            next_run_seconds = (target_time - now).total_seconds()
+                        else:
+                            next_run_seconds = 300
                         
-                        # Ensure we don't sleep for a negative amount or too soon if now > target but match not "on" yet
-                        if next_run_seconds < 30:
-                            next_run_seconds = 300 # Wait 5 mins and try again
-                            logger.info(f"{get_ts()} - scheduler - Next fixture kickoff passed but not active. Retrying in 5 mins.")
+                        # Ensure we don't sleep for a negative amount or too soon
+                        if next_run_seconds < 60:
+                            next_run_seconds = 300 # Check again in 5 minutes
+                            logger.info(f"{get_ts()} - scheduler - Next fixture is very soon or just started. Checking again in 5 mins.")
                         else:
                             logger.info(f"{get_ts()} - scheduler - No matches in play. Next match starts at {next_fixture.kickoff_time}. Next run in {round(next_run_seconds/60)} mins (5 mins after kickoff).")
                     else:

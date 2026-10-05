@@ -3,14 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Last Person Standing - Prem - Player</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Last Person Standing - Player</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚽</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="/utils.js?v=1.0.1"></script>
+    <style>
+        [v-cloak] { display: none; }
+    </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div id="app" class="container mx-auto px-4 py-8 max-w-2xl">
-        <h1 class="text-3xl font-bold text-center mb-8 text-blue-900">⚽ Last Person Standing - Prem</h1>
+        <h1 class="text-3xl font-bold text-center mb-8 text-blue-900">⚽ Last Person Standing</h1>
 
         <!-- Login -->
         <div v-if="!token" class="bg-white p-8 rounded-lg shadow-md">
@@ -25,60 +32,121 @@
         </div>
 
         <!-- Dashboard -->
-        <div v-else>
+        <div v-else v-cloak>
+            <div class="text-right mb-4">
+                <button @click="logout" class="text-gray-500 hover:underline text-sm font-medium">Logout</button>
+            </div>
+            <!-- Competition Selector -->
+            <div class="bg-white p-4 rounded-lg shadow-md mb-6 flex items-center justify-between">
+                <label class="font-bold text-gray-700 mr-4">Competition:</label>
+                <select v-model="selectedCompId" @change="loadData" class="flex-1 border p-2 rounded">
+                    <option v-for="comp in competitions" :key="comp.id" :value="comp.id">{{ comp.name }}</option>
+                </select>
+            </div>
+
             <div class="flex justify-between items-center mb-6">
                 <div>
                     <p class="text-gray-600">Welcome,</p>
-                    <h2 class="text-2xl font-bold">{{ user.name }}</h2>
+                    <h2 class="text-2xl font-bold">
+                        <span v-if="user.name">{{ user.name }}</span>
+                        <span v-else class="text-gray-300">...</span>
+                    </h2>
                 </div>
-                <div :class="user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" class="px-4 py-2 rounded-full font-bold">
-                    {{ user.is_active ? 'ACTIVE' : 'ELIMINATED' }}
+                <div v-if="isUserActive" class="bg-green-100 text-green-800 px-4 py-2 rounded-full font-bold">
+                    ACTIVE
+                </div>
+                <div v-else-if="isUserPending" class="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-full font-bold">
+                    PENDING
+                </div>
+                <div v-else-if="isUserQueued" class="bg-orange-100 text-orange-800 px-4 py-2 rounded-full font-bold flex items-center">
+                    <span class="w-2 h-2 bg-orange-500 rounded-full mr-2 animate-pulse"></span>
+                    RE-ENTRY PAID
+                </div>
+                <div v-else class="bg-red-100 text-red-800 px-4 py-2 rounded-full font-bold">
+                    ELIMINATED
                 </div>
             </div>
 
+            <!-- Pending Status / Payment Urge -->
+            <div v-if="isUserPending" class="mb-8 bg-blue-50 border-2 border-blue-200 p-8 rounded-2xl shadow-sm text-center">
+                <div class="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-500">
+                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                </div>
+                <h3 class="text-2xl font-black text-blue-800 mb-2">Stuck in the Tunnel?</h3>
+                <p class="text-blue-700 leading-relaxed mb-6">
+                    You're currently <span class="font-bold">Pending</span>. The gaffer won't let you on the pitch until you've settled the entry fee!
+                    <br><br>
+                    Cough up the <span class="font-bold underline decoration-blue-400 decoration-2">£{{ entryFee }} entry fee</span> to the admin to get your registration over the line.
+                    Don't be the one left watching from the stands while everyone else is chasing the glory (and the pot)!
+                </p>
+                <div class="inline-block bg-blue-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg">
+                    Awaiting Payment Approval
+                </div>
+            </div>
+
+            <!-- Re-buy Option -->
+            <div v-if="eligibleForRebuy && !isUserQueued" class="mb-8 bg-yellow-50 border-2 border-yellow-200 p-6 rounded-2xl shadow-sm text-center">
+                <h3 class="text-xl font-bold text-yellow-800 mb-2">You can re-buy!</h3>
+                <p class="text-yellow-700 mb-4">You were eliminated, but re-buys are available for this round (£{{ entryFee }}).</p>
+                <button class="bg-yellow-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-yellow-700 transition">
+                    Contact Admin to Re-buy
+                </button>
+            </div>
+
+            <!-- Queued Notice -->
+            <div v-if="isUserQueued" class="mb-8 bg-orange-50 border-2 border-orange-200 p-6 rounded-2xl shadow-sm text-center">
+                <h3 class="text-xl font-bold text-orange-800 mb-2">Re-entry Confirmed!</h3>
+                <p class="text-orange-700">
+                    Your re-entry has been processed and your £{{ entryFee }} has been added to the pot.
+                    <br><br>
+                    <span class="font-bold">You will be automatically moved to ACTIVE status when the next round starts.</span>
+                </p>
+            </div>
+
             <!-- Your Pick / Make Pick Panel -->
-            <div v-if="user.is_active" class="mb-8">
+            <div v-if="isUserActive" class="mb-8">
                 <!-- Already have a pick -->
                 <div v-if="myCurrentPick" class="bg-gradient-to-r from-blue-600 to-indigo-700 p-8 rounded-2xl shadow-xl text-white relative overflow-hidden">
-                    <div v-if="fixtures.length > 0 && fixtures[0].gameweek.is_rollover" class="absolute top-0 right-0 bg-purple-500 text-white text-[10px] font-black px-3 py-1 uppercase tracking-tighter transform rotate-12 translate-x-4 translate-y-2 shadow-sm">
-                        Rollover Week
-                    </div>
-                    <h3 class="text-lg font-bold opacity-80 uppercase tracking-widest mb-4">Your pick for this week</h3>
+                    <h3 class="text-lg font-bold opacity-80 uppercase tracking-widest mb-4">Your pick for {{ getFriendlyName() }}</h3>
                     <div class="flex items-center justify-between">
                         <div class="flex items-center">
                             <div class="bg-white p-3 rounded-xl mr-6 shadow-lg">
-                                <img :src="getLogoUrl(myCurrentPick)" class="w-16 h-16 object-contain" @error="handleLogoError">
+                                <img :src="getLogoUrl(myCurrentPick, myCurrentPickCrest)" class="w-16 h-16 object-contain" @error="handleLogoError">
                             </div>
                             <div>
                                 <p class="text-3xl font-black">{{ myCurrentPick }}</p>
-                                <p class="text-blue-100 opacity-75">Good luck! You've got this.</p>
+                                <p v-if="isPickLocked" class="text-red-200 text-xs font-bold uppercase tracking-tighter">Round started - Pick locked</p>
+                                <p v-else class="text-blue-100 opacity-75">Good luck!</p>
                             </div>
                         </div>
-                        <button @click="showPickForm = !showPickForm" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-bold transition">
+                        <button v-if="!isPickLocked" @click="showPickForm = !showPickForm" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-bold transition">
                             Change Pick
                         </button>
                     </div>
                 </div>
 
                 <!-- Show form if no pick OR if user wants to change -->
-                <div v-if="!myCurrentPick || showPickForm" class="bg-white p-6 rounded-lg shadow-md mt-4 transition-all duration-300 border-t-4" :class="fixtures.length > 0 && fixtures[0].gameweek.is_rollover ? 'border-purple-500' : 'border-blue-600'">
+                <div v-if="(!myCurrentPick || showPickForm) && !isPickLocked" class="bg-white p-6 rounded-lg shadow-md mt-4 transition-all duration-300 border-t-4 border-blue-600">
                     <div class="flex justify-between items-start mb-4">
                         <h3 class="text-xl font-bold">Make Your Pick</h3>
-                        <span v-if="fixtures.length > 0 && fixtures[0].gameweek.is_rollover" class="bg-purple-100 text-purple-800 text-[10px] px-2 py-1 rounded-full font-black uppercase tracking-widest">Rollover Active</span>
                     </div>
-                    <div v-if="fixtures.length > 0">
-                        <p class="text-sm text-gray-500 mb-4">Select one team to win this week. Deadline: {{ formatDate(fixtures[0].gameweek.deadline) }}</p>
+                    <div v-if="availableFixtures.length > 0">
+                        <p class="text-sm text-gray-500 mb-4">
+                            Select one team to win. 
+                            <span v-if="isGroupStage" class="font-bold text-blue-600">Deadline: Match kickoff</span>
+                            <span v-else>Deadline: {{ formatDate(fixtures[0].gameweek.deadline) }}</span>
+                        </p>
                         <select v-model="selectedTeam" class="w-full border p-3 rounded mb-4">
                             <option value="">-- Choose a Team --</option>
-                            <template v-for="f in fixtures">
-                                <option :value="f.home_team">{{ f.home_team }} (vs {{ f.away_team }})</option>
-                                <option :value="f.away_team">{{ f.away_team }} (vs {{ f.home_team }})</option>
+                            <template v-for="f in availableFixtures">
+                                <option :value="f.home_team">{{ f.home_team }} (vs {{ f.away_team }}) - {{ f.stage }}</option>
+                                <option :value="f.away_team">{{ f.away_team }} (vs {{ f.home_team }}) - {{ f.stage }}</option>
                             </template>
                         </select>
 
                         <!-- Pick Preview -->
                         <div v-if="selectedTeam" class="flex items-center justify-center mb-6 p-4 border-2 border-dashed border-blue-200 rounded-lg bg-blue-50 transition-all duration-300">
-                            <img :src="getLogoUrl(selectedTeam)" class="w-16 h-16 object-contain mr-4 drop-shadow-md" @error="handleLogoError">
+                            <img :src="getSelectedTeamCrest(selectedTeam)" class="w-16 h-16 object-contain mr-4 drop-shadow-md" @error="handleLogoError">
                             <div>
                                 <p class="text-xs text-blue-600 uppercase font-bold tracking-wider">Your Selection</p>
                                 <p class="text-xl font-black text-blue-900">{{ selectedTeam }}</p>
@@ -90,18 +158,18 @@
                             <button v-if="myCurrentPick" @click="showPickForm = false" class="px-6 bg-gray-100 text-gray-600 font-bold py-3 rounded hover:bg-gray-200 transition">Cancel</button>
                         </div>
                     </div>
-                    <div v-else class="text-center text-gray-500 py-4">No active gameweek or fixtures available.</div>
+                    <div v-else class="text-center text-gray-500 py-4">No active stage or fixtures available.</div>
                     <p v-if="pickMsg" class="mt-4 text-center font-bold" :class="pickMsg.includes('Success') ? 'text-green-600' : 'text-red-600'">{{ pickMsg }}</p>
                 </div>
             </div>
 
             <!-- Inactive Status -->
-            <div v-else class="bg-red-50 border-2 border-red-200 p-8 rounded-2xl shadow-sm mb-8 text-center">
+            <div v-else-if="isUserOut && !eligibleForRebuy" class="bg-red-50 border-2 border-red-200 p-8 rounded-2xl shadow-sm mb-8 text-center">
                 <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500">
                     <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                 </div>
                 <h3 class="text-2xl font-black text-red-800 mb-2">You have perished!</h3>
-                <p class="text-red-600 leading-relaxed">Sorry, you have perished and no longer in the running for the esteemed Last Person Standing.</p>
+                <p class="text-red-600 leading-relaxed">Sorry, you have perished and no longer in the running.</p>
             </div>
 
             <!-- History -->
@@ -111,16 +179,16 @@
                     <table class="w-full text-left">
                         <thead>
                             <tr class="border-b">
-                                <th class="pb-2">GW</th>
+                                <th class="pb-2">Stage</th>
                                 <th class="pb-2">Team</th>
                                 <th class="pb-2 text-right">Outcome</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="entry in history" :key="entry.gameweek_id" class="border-b last:border-0">
-                                <td class="py-2">{{ entry.gameweek_id }}</td>
+                            <tr v-for="entry in history" :key="entry.gameweek_number" class="border-b last:border-0">
+                                <td class="py-2">{{ entry.gameweek_number }}</td>
                                 <td class="py-2 flex items-center">
-                                    <img :src="getLogoUrl(entry.team_name)" class="w-6 h-6 object-contain mr-2" @error="handleLogoError">
+                                    <img :src="getLogoUrl(entry.team_name, entry.team_crest)" class="w-6 h-6 object-contain mr-2" @error="handleLogoError">
                                     {{ entry.team_name }}
                                 </td>
                                 <td class="py-2 text-right">
@@ -140,13 +208,16 @@
 
             <!-- Standings -->
             <div class="bg-white p-6 rounded-lg shadow-md">
-                <h3 class="text-xl font-bold mb-4">Game Standings</h3>
+                <h3 class="text-xl font-bold mb-4">Game Standings ({{ getFriendlyName() }})</h3>
                 <div class="space-y-3">
-                    <div v-for="player in standings" class="flex justify-between border-b pb-2">
+                    <div v-for="player in filteredStandings" class="flex justify-between border-b pb-2">
                         <span :class="{'line-through text-gray-400': !player.is_active}">{{ player.name }}</span>
                         <span class="font-medium min-w-0 ml-4">
-                            <span v-if="player.current_pick" class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm flex items-center truncate max-w-[150px]" :title="player.current_pick">
-                                <img :src="getLogoUrl(player.current_pick)" class="w-4 h-4 object-contain mr-1 flex-shrink-0" @error="handleLogoError">
+                            <span v-if="player.has_hidden_pick" class="text-gray-400 text-sm italic flex items-center">
+                                <span class="mr-1">🔒</span> Hidden
+                            </span>
+                            <span v-else-if="player.current_pick" class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm flex items-center truncate max-w-[150px]" :title="player.current_pick">
+                                <img :src="getLogoUrl(player.current_pick, player.current_pick_crest)" class="w-4 h-4 object-contain mr-1 flex-shrink-0" @error="handleLogoError">
                                 <span class="truncate">{{ player.current_pick }}</span>
                             </span>
                             <span v-else-if="!player.is_active" class="text-red-500 text-sm italic">Out</span>
@@ -156,7 +227,6 @@
                 </div>
             </div>
 
-            <button @click="logout" class="mt-8 text-gray-500 hover:underline w-full text-center">Logout</button>
         </div>
     </div>
 
@@ -167,55 +237,78 @@
                 return {
                     pin: '',
                     token: localStorage.getItem('token'),
-                    user: {},
+                    user: JSON.parse(localStorage.getItem('user_profile') || '{}'),
+                    competitions: [],
+                    selectedCompId: 1,
+                    entryFee: 5.0,
+                    myStatus: null,
                     fixtures: [],
                     standings: [],
                     history: [],
                     selectedTeam: '',
                     showPickForm: false,
                     error: '',
-                    pickMsg: '',
-                    teamBadges: {
-                        "Arsenal FC": 57,
-                        "Aston Villa FC": 58,
-                        "AFC Bournemouth": 1044,
-                        "Brentford FC": 402,
-                        "Brighton & Hove Albion FC": 397,
-                        "Chelsea FC": 61,
-                        "Crystal Palace FC": 354,
-                        "Everton FC": 62,
-                        "Fulham FC": 63,
-                        "Ipswich Town FC": 349,
-                        "Leicester City FC": 338,
-                        "Liverpool FC": 64,
-                        "Manchester City FC": 65,
-                        "Manchester United FC": 66,
-                        "Newcastle United FC": 67,
-                        "Nottingham Forest FC": 351,
-                        "Southampton FC": 340,
-                        "Tottenham Hotspur FC": 73,
-                        "West Ham United FC": 563,
-                        "Wolverhampton Wanderers FC": 76,
-                        "Leeds United FC": 341,
-                        "Sunderland AFC": 71,
-                        "Burnley FC": 328,
-                        "Luton Town FC": 389,
-                        "Sheffield United FC": 356,
-                        "Norwich City FC": 332,
-                        "Watford FC": 346
-                    }
+                    pickMsg: ''
                 }
             },
             computed: {
+                isUserActive() {
+                    return this.myStatus ? this.myStatus.is_active : false;
+                },
+                isUserPending() {
+                    return this.myStatus ? this.myStatus.is_pending : false;
+                },
+                eligibleForRebuy() {
+                    return this.myStatus ? this.myStatus.eligible_for_rebuy : false;
+                },
+                isUserOut() {
+                    return this.myStatus ? (!this.myStatus.is_active && !this.myStatus.is_pending) : false;
+                },
+                isUserQueued() {
+                    return this.myStatus ? this.myStatus.is_queued : false;
+                },
                 myCurrentPick() {
-                    if (!this.user || !this.standings || !this.standings.length) return null;
-                    const me = this.standings.find(p => p.name === this.user.name);
-                    return me ? me.current_pick : null;
+                    return this.myStatus ? this.myStatus.current_pick : null;
+                },
+                myCurrentPickCrest() {
+                    return this.myStatus ? this.myStatus.current_pick_crest : null;
+                },
+                isGroupStage() {
+                    if (!this.fixtures || this.fixtures.length === 0) return false;
+                    return this.fixtures[0].gameweek.number <= 3;
+                },
+                availableFixtures() {
+                    if (!this.fixtures) return [];
+                    
+                    const now = new Date();
+                    return this.fixtures.filter(f => {
+                        // Keep fixtures that haven't started yet
+                        return new Date(f.kickoff_time) > now;
+                    });
+                },
+                isPickLocked() {
+                    if (!this.myCurrentPick || !this.fixtures) return false;
+                    
+                    // Check if competition is a LEAGUE (Premier League)
+                    const comp = this.competitions.find(c => c.id === this.selectedCompId);
+                    if (comp && comp.type === 'LEAGUE') {
+                        // Global lock based on gameweek deadline
+                        return new Date() > new Date(this.fixtures[0].gameweek.deadline);
+                    }
+                    
+                    // TOURNAMENT: Per-match lock
+                    const currentFixture = this.fixtures.find(f => f.home_team === this.myCurrentPick || f.away_team === this.myCurrentPick);
+                    if (!currentFixture) return false;
+                    return new Date() > new Date(currentFixture.kickoff_time);
+                },
+                filteredStandings() {
+                    if (!this.standings) return [];
+                    return this.standings.filter(p => !p.is_pending);
                 }
             },
             async mounted() {
                 if (this.token) {
-                    await this.loadData();
+                    await this.loadInitial();
                 }
             },
             methods: {
@@ -229,7 +322,7 @@
                         if (res.ok) {
                             this.token = data.access_token;
                             localStorage.setItem('token', this.token);
-                            await this.loadData();
+                            await this.loadInitial();
                         } else {
                             this.error = data.detail;
                         }
@@ -240,25 +333,48 @@
                 logout() {
                     this.token = null;
                     localStorage.removeItem('token');
+                    localStorage.removeItem('user_profile');
+                },
+                async loadInitial() {
+                    const headers = { 'Authorization': `Bearer ${this.token}` };
+                    const compRes = await fetch('/public/competitions', { headers });
+                    this.competitions = await compRes.json();
+                    if (this.competitions.length > 0) {
+                        // Prioritize active competitions, then PL specifically
+                        const active = this.competitions.find(c => c.is_active);
+                        const pl = this.competitions.find(c => c.code === 'PL');
+                        this.selectedCompId = active ? active.id : (pl ? pl.id : this.competitions[0].id);
+                    }
+                    await this.loadData();
                 },
                 async loadData() {
                     const headers = { 'Authorization': `Bearer ${this.token}` };
                     const userRes = await fetch('/me', { headers });
                     this.user = await userRes.json();
+                    localStorage.setItem('user_profile', JSON.stringify(this.user));
                     
-                    const fixRes = await fetch('/fixtures', { headers });
+                    const fixRes = await fetch(`/fixtures?competition_id=${this.selectedCompId}`, { headers });
                     this.fixtures = await fixRes.json();
 
-                    const standRes = await fetch('/standings', { headers });
-                    this.standings = await standRes.json();
+                    const statusRes = await fetch(`/competition-status?competition_id=${this.selectedCompId}`, { headers });
+                    this.myStatus = await statusRes.json();
 
-                    const histRes = await fetch('/history', { headers });
+                    const standRes = await fetch(`/public/standings?competition_id=${this.selectedCompId}`, { headers });
+                    const standData = await standRes.json();
+                    this.standings = standData.standings;
+                    if (standData.entry_fee) {
+                        this.entryFee = standData.entry_fee;
+                    }
+
+                    const histRes = await fetch(`/history?competition_id=${this.selectedCompId}`, { headers });
                     this.history = await histRes.json();
+                    
+                    this.pickMsg = '';
                 },
                 async submitPick() {
                     if (!this.selectedTeam) return;
                     const headers = { 'Authorization': `Bearer ${this.token}` };
-                    const res = await fetch(`/picks?team_name=${encodeURIComponent(this.selectedTeam)}`, { 
+                    const res = await fetch(`/picks?team_name=${encodeURIComponent(this.selectedTeam)}&competition_id=${this.selectedCompId}`, { 
                         method: 'POST', 
                         headers 
                     });
@@ -274,36 +390,25 @@
                 formatDate(dateStr) {
                     return new Date(dateStr).toLocaleString();
                 },
-                getLogoUrl(teamName) {
-                    if (!teamName) return 'https://www.premierleague.com/resources/rebrand/v7.123.14/i/elements/badges/t-default.png';
-                    
-                    // Direct match
-                    let id = this.teamBadges[teamName];
-                    
-                    // Fuzzy match (handles name variations)
-                    if (!id) {
-                        const cleanName = teamName.replace(/\s+(FC|AFC|City|United)$/i, '').toLowerCase();
-                        const entry = Object.entries(this.teamBadges).find(([name]) =>
-                            name.toLowerCase().includes(cleanName)
-                        );
-                        if (entry) id = entry[1];
+                getFriendlyName() {
+                    if (!this.fixtures || this.fixtures.length === 0) return 'this stage';
+                    const gw = this.fixtures[0].gameweek;
+                    return window.LMS_UTILS.getFriendlyStageName(gw, this.fixtures);
+                },
+                getLogoUrl(teamName, crestUrl) {
+                    const fallback = 'https://crests.football-data.org/77.svg'; // Default globe icon
+                    return crestUrl || fallback;
+                },
+                getSelectedTeamCrest(teamName) {
+                    if (!teamName) return 'https://crests.football-data.org/77.svg';
+                    const fixture = this.fixtures.find(f => f.home_team === teamName || f.away_team === teamName);
+                    if (fixture) {
+                        return fixture.home_team === teamName ? fixture.home_team_crest : fixture.away_team_crest;
                     }
-
-                    if (!id) return 'https://www.premierleague.com/resources/rebrand/v7.123.14/i/elements/badges/t-default.png';
-                    // Using .svg as primary and .png as secondary via error handler
-                    return `https://crests.football-data.org/${id}.svg`;
+                    return 'https://crests.football-data.org/77.svg';
                 },
                 handleLogoError(event) {
-                    const fallback = 'https://www.premierleague.com/resources/rebrand/v7.123.14/i/elements/badges/t-default.png';
-                    const src = event.target.src;
-                    
-                    if (src.endsWith('.svg')) {
-                        // If SVG fails, try PNG
-                        event.target.src = src.replace('.svg', '.png');
-                    } else if (src !== fallback) {
-                        // If PNG fails, use fallback
-                        event.target.src = fallback;
-                    }
+                    event.target.src = 'https://crests.football-data.org/77.svg';
                 }
             }
         }).mount('#app');

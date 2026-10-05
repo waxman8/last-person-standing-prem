@@ -21,5 +21,8 @@ ENV DATABASE_URL="sqlite:////app/data/lms.db"
 # Expose port
 EXPOSE 8000
 
-# Initialize admin and start app
-CMD python init_admin.py && uvicorn main:app --host 0.0.0.0 --port 8000
+# Initialize admin 
+#CMD python init_admin.py
+
+# Start app (assuming DB and admin user exists)
+CMD uvicorn main:app --host 0.0.0.0 --port 8000
