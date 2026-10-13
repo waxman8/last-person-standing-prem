@@ -156,12 +156,46 @@ def stage_to_number(stage: str) -> int | None:
     }
     return mapping.get(stage)
 
-def check_rebuy_eligibility(competition_code: str, stage: str) -> bool:
+def get_competition_first_round_number(session, comp_id: int) -> int:
+    """Finds the gameweek number of Round 1 for this competition."""
+    first_picked_gw = session.exec(
+        select(Gameweek).join(Pick).where(Pick.competition_id == comp_id).order_by(Gameweek.number)
+    ).first()
+    if first_picked_gw:
+        return first_picked_gw.number
+
+    first_processed_gw = session.exec(
+        select(Gameweek).where(and_(Gameweek.competition_id == comp_id, Gameweek.is_processed == True)).order_by(Gameweek.number)
+    ).first()
+    if first_processed_gw:
+        return first_processed_gw.number
+
+    current_gw = session.exec(
+        select(Gameweek).where(and_(Gameweek.competition_id == comp_id, Gameweek.is_current == True))
+    ).first()
+    if current_gw:
+        return current_gw.number
+
+    first_gw = session.exec(
+        select(Gameweek).where(Gameweek.competition_id == comp_id).order_by(Gameweek.number)
+    ).first()
+    return first_gw.number if first_gw else 1
+
+def is_first_gameweek(session, comp_id: int, gw_id: int, gw_number: int) -> bool:
+    """Checks if a gameweek is Round 1 of the competition."""
+    return gw_number == get_competition_first_round_number(session, comp_id)
+
+def check_rebuy_eligibility(competition_code: str, stage: str, is_first_round: bool = False) -> bool:
     """Centralized logic for competition-specific re-buy eligibility."""
     if competition_code == "WC":
         # Re-buy allowed for Group Stage, R32, and R16 (to enter R8)
         # Rule: No re-buy after R8 (Quarter Finals)
         return stage in ['GROUP_STAGE', 'ROUND_OF_32', 'LAST_32', 'ROUND_OF_16', 'LAST_16']
+    
+    # LPS / League Competitions: Only Round 1 allows re-buy/re-entry
+    if is_first_round:
+        return True
+
     return False
 
 def process_live_results(session, competition):
@@ -174,6 +208,8 @@ def process_live_results(session, competition):
     
     if not current_gw:
         return
+
+    is_first_round = is_first_gameweek(session, competition.id, current_gw.id, current_gw.number)
 
     picks = session.exec(select(Pick).where(Pick.gameweek_id == current_gw.id)).all()
     for pick in picks:
@@ -204,7 +240,7 @@ def process_live_results(session, competition):
                 status.status = 'OUT'
                 status.is_active = False
                 # Eligibility for re-buy based on centralized rules
-                if check_rebuy_eligibility(competition.code, fixture.stage):
+                if check_rebuy_eligibility(competition.code, fixture.stage, is_first_round):
                     status.eligible_for_rebuy = True
                 session.add(status)
     
@@ -223,6 +259,8 @@ def retroactive_status_sync(session):
         
         if not current_gw:
             continue
+
+        is_first_round = is_first_gameweek(session, comp.id, current_gw.id, current_gw.number)
 
         picks = session.exec(select(Pick).where(Pick.gameweek_id == current_gw.id)).all()
         for pick in picks:
@@ -251,13 +289,13 @@ def retroactive_status_sync(session):
                         logger.info(f"DEBUG RETRO: Marking user {pick.user_id} as OUT. Pick: {pick.team_name}, Winner: {fixture.winner}")
                         status.status = 'OUT'
                         status.is_active = False
-                        if check_rebuy_eligibility(comp.code, fixture.stage):
+                        if check_rebuy_eligibility(comp.code, fixture.stage, is_first_round):
                             status.eligible_for_rebuy = True
                         session.add(status)
                         count += 1
                     else:
                         # Even if they are already OUT, re-check eligibility in case code changed
-                        if check_rebuy_eligibility(comp.code, fixture.stage):
+                        if check_rebuy_eligibility(comp.code, fixture.stage, is_first_round):
                             if not status.eligible_for_rebuy:
                                 status.eligible_for_rebuy = True
                                 session.add(status)

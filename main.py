@@ -15,7 +15,7 @@ from sqlmodel import select, and_, desc
 from database import init_db, get_session
 from models import User, Gameweek, Fixture, Pick, Competition, UserCompetitionStatus, ensure_utc
 import api_client
-from services import sync_fixtures_logic, check_rebuy_eligibility, retroactive_status_sync
+from services import sync_fixtures_logic, check_rebuy_eligibility, retroactive_status_sync, is_first_gameweek, get_competition_first_round_number
 from scheduler import fixture_scheduler_worker
 
 # Security Constants
@@ -170,25 +170,26 @@ async def user_re_entry(user_id: int, competition_id: int, admin: User = Depends
     if not current_gw:
         raise HTTPException(status_code=400, detail="Re-entry or Rollover activation not allowed cannot determine current GW")
     
-    if not current_gw.re_entry_allowed and not current_gw.is_rollover and not status.eligible_for_rebuy:
-        raise HTTPException(status_code=400, detail="Re-entry or Rollover activation not allowed in the current stage")
-    
     if status.status == "ACTIVE":
         raise HTTPException(status_code=400, detail="User is already active")
     
-    # Validation: Ensure user was not eliminated in the current gameweek
-    # If they have a pick in the current_gw and are OUT, they just lost
-    last_pick = session.exec(
-        select(Pick).where(and_(Pick.user_id == user_id, Pick.gameweek_id == current_gw.id))
-    ).first()
-    
-    if last_pick and status.status == "OUT":
-        # Queue the re-entry instead of blocking
-        status.has_paid_reentry = True
-        session.add(status)
-        session.commit()
-        return {"message": "User eliminated in current round. Re-entry has been queued and they will be auto-activated when the next round starts."}
+    # Check max re-entries (allow only 1 re-entry per player unless rollover)
+    if not current_gw.is_rollover and status.number_of_re_entries >= 1:
+        raise HTTPException(status_code=400, detail="Player has already used their re-entry")
 
+    # In LEAGUE / LPS competitions, re-entry is permitted after Round 1 (in Round 2)
+    comp = session.get(Competition, competition_id)
+    if comp and comp.type == "LEAGUE" and not current_gw.is_rollover:
+        first_round_num = get_competition_first_round_number(session, competition_id)
+        max_reentry_gw_number = first_round_num + 1
+        if current_gw.number > max_reentry_gw_number:
+            raise HTTPException(status_code=400, detail="Re-entry is only allowed after Round 1 (Round 2). Thereafter elimination is final.")
+    else:
+        # Tournament (WC) or other competitions
+        if not current_gw.re_entry_allowed and not current_gw.is_rollover and not status.eligible_for_rebuy:
+            raise HTTPException(status_code=400, detail="Re-entry or Rollover activation not allowed in the current stage")
+
+    # Activate immediately and increment re-entry counter
     status.status = "ACTIVE"
     status.is_active = True
     status.eligible_for_rebuy = False
@@ -220,13 +221,24 @@ async def update_user_status(user_id: int, new_status: str, competition_id: int,
     if not status:
         raise HTTPException(status_code=404, detail="User status for this competition not found")
     
-    # Safety Check: Do not allow manually setting an 'OUT' player to 'ACTIVE'
-    # This ensures they must use the 'Re-entry' button to properly increment counters and reset history.
+    # If reactivating an 'OUT' player, handle it as a proper re-entry
     if new_status == "ACTIVE" and status.status == "OUT":
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot manually set an 'OUT' player to 'ACTIVE'. Please use the 'Re-entry' (circle arrow) button to ensure the prize pot and history reset are handled correctly."
-        )
+        current_gw = session.exec(
+            select(Gameweek).where(and_(Gameweek.competition_id == competition_id, Gameweek.is_current == True))
+        ).first()
+        comp = session.get(Competition, competition_id)
+        if comp and comp.type == "LEAGUE" and not (current_gw and current_gw.is_rollover):
+            first_round_num = get_competition_first_round_number(session, competition_id)
+            max_reentry_gw_number = first_round_num + 1
+            if status.number_of_re_entries >= 1:
+                raise HTTPException(status_code=400, detail="Player has already used their re-entry")
+            if current_gw and current_gw.number > max_reentry_gw_number:
+                raise HTTPException(status_code=400, detail="Re-entry is only allowed after Round 1 (Round 2). Thereafter elimination is final.")
+
+        status.number_of_re_entries += 1
+        status.last_re_entry_gw_id = current_gw.id if current_gw else 0
+        status.eligible_for_rebuy = False
+        status.has_paid_reentry = False
 
     status.status = new_status
     status.is_active = (new_status == "ACTIVE")
@@ -271,6 +283,7 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
     if gw.is_processed: raise HTTPException(status_code=400, detail="Gameweek already processed")
 
     comp = session.get(Competition, gw.competition_id)
+    is_first_round = is_first_gameweek(session, comp.id, gw.id, gw.number) if comp else (gw.number == 1)
     fixtures = session.exec(select(Fixture).where(Fixture.gameweek_id == gw.id)).all()
     all_finalized = all(f.status in ['FINISHED', 'POSTPONED', 'CANCELLED'] for f in fixtures)
     
@@ -288,7 +301,7 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
         if fixture and fixture.status == 'FINISHED' and fixture.winner != pick.team_name:
             status.status = "OUT"
             status.is_active = False
-            if comp and check_rebuy_eligibility(comp.code, fixture.stage):
+            if comp and check_rebuy_eligibility(comp.code, fixture.stage, is_first_round):
                 status.eligible_for_rebuy = True
             session.add(status)
     
@@ -303,7 +316,8 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
         if not user_pick:
             s.status = "OUT"
             s.is_active = False
-            if comp and fixtures and check_rebuy_eligibility(comp.code, fixtures[0].stage):
+            stage_to_check = fixtures[0].stage if fixtures else 'REGULAR'
+            if comp and check_rebuy_eligibility(comp.code, stage_to_check, is_first_round):
                 s.eligible_for_rebuy = True
             session.add(s)
     
@@ -334,6 +348,17 @@ async def apply_results(gw_id: int, admin: User = Depends(get_admin_user), sessi
             qu.number_of_re_entries += 1
             qu.paid = True
             session.add(qu)
+
+        # For LEAGUE, expire any unused Round 1 rebuy eligibility once moving past Round 2
+        first_round_num = get_competition_first_round_number(session, gw.competition_id)
+        if comp and comp.type == 'LEAGUE' and gw.number >= (first_round_num + 1):
+            stale_rebuys = session.exec(select(UserCompetitionStatus).where(and_(
+                UserCompetitionStatus.competition_id == gw.competition_id,
+                UserCompetitionStatus.eligible_for_rebuy == True
+            ))).all()
+            for sr in stale_rebuys:
+                sr.eligible_for_rebuy = False
+                session.add(sr)
 
     session.commit()
     return {"message": f"Gameweek {gw.number} processed successfully."}
@@ -607,7 +632,7 @@ def _get_standings_data(competition_id: int, session: Session, include_pending: 
         "gw_id": current_gw.number if current_gw else None,
         "deadline_passed": deadline_passed,
         "standings": results,
-        "total_re_entries": total_re_entries,
+        "total_re_entries": total_re_entries + total_queued_re_entries,
         "total_rollover_re_entries": total_rollover_re_entries,
         "prize_pot": prize_pot,
         "entry_fee": entry_fee
